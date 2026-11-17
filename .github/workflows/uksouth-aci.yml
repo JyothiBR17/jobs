@@ -142,7 +142,7 @@ jobs:
           def mount(name,path):
               return {"name":name,"mountPath":path}
           group={
-            "name":os.environ["GROUP"], "apiVersion":"2021-10-01",
+            "name":os.environ["GROUP"], "apiVersion":"2023-05-01",
             "location":"uksouth",
             "identity":{"type":"UserAssigned","userAssignedIdentities":{identity:{}}},
             "properties":{
