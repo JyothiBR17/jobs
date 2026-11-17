@@ -8,7 +8,7 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
-from app.agents import Analysis, Profile, evaluate
+from app.agents import Analysis, Profile, evaluate, evidence_only_analysis, process
 from app.api import app
 from app.db import checkpoint, database
 from app.discovery import country_for, feed, ingest
@@ -66,6 +66,32 @@ class Workflow(unittest.TestCase):
                 )
         with database(write=True) as db:
             self.id = ingest(db, POSTING)
+
+    def test_no_key_job_match_uses_literal_facts(self):
+        profile = Profile.model_validate(PROFILE)
+        result = evidence_only_analysis(POSTING, profile)
+        self.assertEqual(100, result.architecture.points)
+        self.assertEqual(100, result.automation.points)
+        self.assertEqual(100, result.security.points)
+        self.assertEqual(100, result.experience.points)
+        self.assertEqual(0, result.location_compensation.points)
+        self.assertEqual("unknown", result.seniority)
+
+    def test_offline_pipeline_creates_a_scored_record(self):
+        self.assertEqual(200, self.client.put("/api/profile", json=PROFILE).status_code)
+        self.assertEqual(200, self.client.post(
+            "/api/resume", files={"file": ("original.pdf", b"%PDF-1.4\\n%%EOF", "application/pdf")}
+        ).status_code)
+        self.assertEqual(200, self.client.put(
+            "/api/profile", json=dict(PROFILE, source_verified=True)
+        ).status_code)
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
+            process(self.id)
+        with database() as db:
+            saved = db.one("SELECT score,detail FROM matching WHERE vacancy_id=?", (self.id,))
+        self.assertIsNotNone(saved)
+        self.assertEqual(80, saved["score"])
+        self.assertEqual("literal_evidence_no_model", json.loads(saved["detail"])["analysis_mode"])
 
     def provision(self):
         self.assertEqual(200, self.client.put("/api/profile", json=PROFILE).status_code)
