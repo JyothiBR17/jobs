@@ -61,3 +61,22 @@ query("Failed or partially created PostgreSQL server", [
     "--name", "jobsai-pg", "--query",
     "{name:name,location:location,sku:sku.name,state:state,publicAccess:network.publicNetworkAccess,version:version}",
 ])
+
+# UK South deployment feasibility: subscription-scoped SKU metadata only.
+# Never inspect, modify or reuse any non-Job-Hunter application.
+query("UK South PostgreSQL editions and versions", [
+    "postgres", "flexible-server", "list-skus", "--location", "uksouth",
+    "--query", "[].{reason:reason,versions:supportedServerVersions[].name,editions:supportedServerEditions[].name}",
+])
+query("UK South App Service plan availability", [
+    "appservice", "list-locations", "--sku", "F1", "--linux-workers-enabled",
+    "--query", "[?contains(name, 'UK South') || contains(name, 'uksouth')].{name:name}",
+])
+query("UK South ACI capabilities", [
+    "container", "list-usage", "--location", "uksouth",
+    "--query", "[].{name:name.value,limit:limit,current:currentValue}",
+])
+query("UK South App Service quotas", [
+    "appservice", "list-quotas", "--location", "uksouth",
+    "--query", "[].{name:name.value,limit:limit,current:currentValue}",
+])
