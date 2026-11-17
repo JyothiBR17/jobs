@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from typing import Literal
 from uuid import uuid4
 
@@ -19,17 +19,39 @@ from .files import store_resume
 from .notifications import enqueue
 
 
+_worker_lock = Lock()
+_worker_state = {"status": "idle", "started": None, "finished": None, "error": None}
+
+
+def _worker_cycle():
+    try:
+        from .worker import main as run_pipeline
+
+        run_pipeline()
+    except Exception as exc:
+        logging.exception("Job Hunter discovery failed")
+        _worker_state.update(status="failed", error=type(exc).__name__)
+    else:
+        _worker_state.update(status="completed", error=None)
+    finally:
+        _worker_state["finished"] = now()
+        _worker_lock.release()
+
+
+def _launch_worker():
+    if not _worker_lock.acquire(blocking=False):
+        return False
+    _worker_state.update(status="running", started=now(), finished=None, error=None)
+    Thread(target=_worker_cycle, daemon=True, name="jobhunter-discovery").start()
+    return True
+
+
 def _scheduled_worker(stop: Event):
-    """Single-process pilot scheduler. Never deploy more than one web worker."""
+    """Single-process scheduler; only one discovery cycle may run at a time."""
     if stop.wait(15):
         return
     while not stop.is_set():
-        try:
-            from .worker import main as run_pipeline
-
-            run_pipeline()
-        except Exception:
-            logging.exception("Job Hunter scheduled discovery cycle failed")
+        _launch_worker()
         if stop.wait(30 * 60):
             break
 
@@ -83,6 +105,19 @@ def config():
 @app.get("/api/session")
 def session(actor=Depends(user)):
     return {"actor": actor}
+
+@app.get("/api/discovery/status")
+def discovery_status(actor=Depends(user)):
+    return dict(_worker_state)
+
+
+@app.post("/api/discovery/run", status_code=202)
+def discovery_run(actor=Depends(user)):
+    if not _launch_worker():
+        raise HTTPException(409, "A discovery cycle is already running")
+    return dict(_worker_state)
+
+
 
 
 @app.get("/api/jobs")
