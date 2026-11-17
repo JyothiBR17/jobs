@@ -74,6 +74,20 @@ function App() {
     if (token || client?.getActiveAccount()) reload().catch(e => {setError(e.message);setReady(false);});
   }, [token,client]);
 
+  useEffect(() => {
+    if (!ready || discovery.status !== 'running') return;
+    const interval = setInterval(() => {
+      api('/discovery/status').then(async next => {
+        setDiscovery(next);
+        if (next.status !== 'running') {
+          const [freshJobs, freshDrafts] = await Promise.all([api('/jobs'), api('/drafts')]);
+          setJobs(freshJobs); setDrafts(freshDrafts);
+        }
+      }).catch(e => setError(e.message));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [ready, discovery.status, token, client]);
+
   async function action(fn, message) {
     setError(''); setNotice('');
     try { await fn(); setDialog(null); await reload(); setNotice(message); }
