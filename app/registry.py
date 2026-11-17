@@ -111,7 +111,7 @@ def refresh_registries():
             continue
         entities = {normalize(row["employer"]) for row in employers}
         try:
-            with httpx.Client(timeout=35, trust_env=False) as client:
+            with httpx.Client(timeout=35) as client:
                 matches = lookup(client, country, entities)
         except (httpx.HTTPError, StopIteration, ValueError, KeyError, TypeError) as exc:
             with database(write=True) as db:

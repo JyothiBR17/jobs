@@ -230,5 +230,5 @@ def boards(raw):
 
 
 def fetch_board(board):
-    with httpx.Client(timeout=20, follow_redirects=False, trust_env=False) as client:
+    with httpx.Client(timeout=20, follow_redirects=False) as client:
         return list(feed(board, client))
