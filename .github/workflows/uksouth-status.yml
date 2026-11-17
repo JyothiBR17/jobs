@@ -1,0 +1,37 @@
+name: Job Hunter UK South live verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/uksouth-status.yml
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production-plan
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Verify only UK South Job Hunter resources and HTTPS
+        run: |
+          set -euo pipefail
+          RG=jobsai-uksouth-rg
+          CONTAINER=jobsai-uksouth-app
+          location=$(az group show -n "$RG" --query location -o tsv)
+          [[ "${location,,}" == uksouth ]] || exit 1
+          az container show -g "$RG" -n "$CONTAINER" --query '{location:location,provisioning:provisioningState,publicFqdn:ipAddress.fqdn,containers:containers[].{name:name,state:instanceView.currentState.state}}' -o json
+          fqdn=$(az container show -g "$RG" -n "$CONTAINER" --query ipAddress.fqdn -o tsv)
+          [[ "$fqdn" == *.uksouth.azurecontainer.io ]] || exit 1
+          echo "Public HTTPS URL: https://$fqdn"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 10 "https://$fqdn/health"
+          curl --fail --silent --show-error "https://$fqdn/api/config" | python -c 'import json,sys;assert json.load(sys.stdin)["production"]'
+          az resource list -g "$RG" --query '[].{name:name,type:type,location:location}' -o table
+          echo "## Live Job Hunter UK South" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dashboard: https://$fqdn" >> "$GITHUB_STEP_SUMMARY"
+          echo "Regional resource group: $RG. No other regions or apps were inspected or modified." >> "$GITHUB_STEP_SUMMARY"
