@@ -36,8 +36,14 @@ def database(write=False):
 
         raw = psycopg.connect(dsn, row_factory=dict_row, client_encoding="UTF8")
     else:
+        # Dedicated, single-instance Azure App Service pilot can persist SQLite in
+        # /home. Never silently fall back to an ephemeral production database.
         if os.environ.get("APP_ENV") == "production":
-            raise RuntimeError("PostgreSQL is required in production")
+            if os.environ.get("APP_DB_ENGINE") != "sqlite":
+                raise RuntimeError("PostgreSQL is required in production unless the isolated SQLite pilot is enabled")
+            sqlite_path = Path(os.environ.get("LOCAL_DB", ""))
+            if not sqlite_path.is_absolute() or not str(sqlite_path).startswith("/home/"):
+                raise RuntimeError("Production SQLite must use persistent App Service /home storage")
         raw = sqlite3.connect(os.environ.get("LOCAL_DB", "jobhunter.db"), timeout=30)
         raw.row_factory = sqlite3.Row
         raw.execute("PRAGMA foreign_keys = ON")
