@@ -18,7 +18,6 @@ from .db import audit, database, migrate, now
 from .files import store_resume
 from .notifications import enqueue
 
-
 _worker_lock = Lock()
 _worker_state = {"status": "idle", "started": None, "finished": None, "error": None}
 
