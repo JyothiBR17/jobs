@@ -40,6 +40,54 @@ if ! grep -Fxq azurerm_storage_account.main /tmp/jobsai-state-addresses; then
   done
   [[ "$imported" == true ]]
 fi
+
+# A previous interrupted storage creation can leave a fully provisioned Azure
+# account marked "tainted" in Terraform state. Never allow a delete/recreate of
+# the existing resume storage: verify both sides before clearing that mark.
+storage_id="$scope/providers/Microsoft.Storage/storageAccounts/${prefix}docs"
+az storage account show --ids "$storage_id" --output json > /tmp/jobsai-live-storage.json
+terraform -chdir=infra state pull > /tmp/jobsai-current-state.json
+python - <<'PY'
+import json, os
+from pathlib import Path
+
+expected_id = (
+    f"/subscriptions/{os.environ['ARM_SUBSCRIPTION_ID']}/resourceGroups/"
+    f"{Path('/tmp/jobsai-prefix').read_text()}-rg/providers/Microsoft.Storage/"
+    f"storageAccounts/{Path('/tmp/jobsai-prefix').read_text()}docs"
+)
+inputs = json.loads(Path("infra/ci.auto.tfvars.json").read_text())
+live = json.loads(Path("/tmp/jobsai-live-storage.json").read_text())
+state = json.loads(Path("/tmp/jobsai-current-state.json").read_text())
+if live.get("id", "").lower() != expected_id.lower():
+    raise SystemExit("Unexpected live storage account identity; refusing to modify state")
+if live.get("provisioningState") != "Succeeded":
+    raise SystemExit("Storage account provisioning is not Succeeded; refusing to untaint")
+if live.get("location", "").lower() != inputs.get("location", "eastus").lower():
+    raise SystemExit("Storage account region differs from the planned support region")
+if live.get("sku", {}).get("name") != "Standard_LRS":
+    raise SystemExit("Storage account SKU differs from the expected Standard_LRS")
+resources = [
+    r for r in state.get("resources", [])
+    if r.get("mode") == "managed"
+    and r.get("type") == "azurerm_storage_account"
+    and r.get("name") == "main"
+]
+if len(resources) != 1 or len(resources[0].get("instances", [])) != 1:
+    raise SystemExit("Unexpected Terraform storage-account state; refusing to untaint")
+instance = resources[0]["instances"][0]
+if instance.get("attributes", {}).get("id", "").lower() != expected_id.lower():
+    raise SystemExit("Terraform storage-account identity does not match live Azure")
+if instance.get("status") == "tainted":
+    Path("/tmp/jobsai-storage-is-tainted").touch()
+    print("Verified existing Azure storage: clear stale Terraform taint without replacement")
+elif instance.get("status", "ready") != "ready":
+    raise SystemExit("Unrecognized storage account state status")
+PY
+if [[ -f /tmp/jobsai-storage-is-tainted ]]; then
+  terraform -chdir=infra untaint azurerm_storage_account.main
+fi
+
 terraform -chdir=infra plan -out=recovery.tfplan -input=false
 terraform -chdir=infra show -json recovery.tfplan > /tmp/jobsai-plan.json
 python - <<'PY'
