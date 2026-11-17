@@ -2,8 +2,8 @@ import json
 import os
 import tempfile
 import unittest
-from threading import Event
 from pathlib import Path
+from threading import Event
 from unittest.mock import patch
 
 import httpx
