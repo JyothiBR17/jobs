@@ -34,11 +34,11 @@ class RegisterHTML(HTMLParser):
                 self.links.append(href)
         elif tag == "tr":
             self.row = []
-        elif tag == "td" and self.row is not None:
+        elif tag in {"th", "td"} and self.row is not None:
             self.cell = []
 
     def handle_endtag(self, tag):
-        if tag == "td" and self.row is not None and self.cell is not None:
+        if tag in {"th", "td"} and self.row is not None and self.cell is not None:
             self.row.append(" ".join("".join(self.cell).split()))
             self.cell = None
         elif tag == "tr" and self.row:

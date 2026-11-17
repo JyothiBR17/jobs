@@ -315,6 +315,17 @@ class Workflow(unittest.TestCase):
         self.assertEqual("licensed_only", result["status"])
         self.assertFalse(result["eligible"])
 
+    def test_netherlands_register_row_headers(self):
+        def respond(request):
+            self.assertEqual("ind.nl", request.url.host)
+            return httpx.Response(
+                200, text='<table><tr><th scope="row">Example B.V.</th><td>01234567</td></tr></table>'
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+            entity = lookup(client, "NL", {"example b.v."})["example b.v."]
+        self.assertEqual("KVK 01234567", entity[3])
+
     def test_notification_retry(self):
         with database(write=True) as db:
             db.execute(
