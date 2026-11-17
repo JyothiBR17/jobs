@@ -1,14 +1,6 @@
 name: jobsai isolated App Service deployment
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/job-hunter-appservice.yml
-      - app/**
-      - migrations/**
-      - web/**
-      - requirements.txt
 permissions:
   contents: read
   id-token: write
@@ -82,7 +74,7 @@ jobs:
           export RESOURCE_GROUP WEBAPP_NAME TF_VARS
           client=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"])["entra_client_id"])')
           owner=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"])["entra_owner_oid"])')
-          boards=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"]).get("job_boards_json", "[]"))')
+          boards=$(python -c 'import json,os,pathlib;raw=json.loads(os.environ["TF_VARS"]).get("job_boards_json","[]");print(raw if json.loads(raw) else pathlib.Path("config/public-boards.json").read_text().replace("\\n",""))')
           identity_id=$(az identity show -g "$RESOURCE_GROUP" -n jobsai-runtime --query id -o tsv)
           identity_client=$(az identity show -g "$RESOURCE_GROUP" -n jobsai-runtime --query clientId -o tsv)
           blob=$(az storage account show -g "$RESOURCE_GROUP" -n jobsaidocs --query primaryEndpoints.blob -o tsv)
