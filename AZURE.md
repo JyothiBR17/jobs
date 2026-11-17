@@ -30,7 +30,7 @@ Microsoft lists B1ms compute at about $12.41 per month on the pricing page. Cont
 | PostgreSQL | Generate the bootstrap password securely. Keep the versionless DATABASE_URL secret in Key Vault. Use sslmode=verify-full, a trusted CA chain and the Azure private server FQDN. Rotate and use a dedicated database role before opening production usage. |
 | OpenAI | Create a project-scoped API credential with project budgets and available structured-output model. Add the key directly to Key Vault. |
 | Job boards | Configure named permitted Greenhouse, Lever and Ashby employer boards. For LinkedIn, Indeed, Google Jobs, commercial feeds and live ATS applications, review the account/provider permissions before enabling any connector. |
-| Email and Telegram | Set a controlled SMTP relay or Telegram bot/chat. The worker accepts secure environment values. Add Key Vault-backed variables to the job and validate delivery before production. |
+| Email and Telegram | Set a controlled SMTP relay or Telegram bot/chat. The worker accepts secure environment values. Set notification_secret_uris to Key Vault URI references and validate delivery before production. |
 | Immigration evidence | UK GOV.UK and Netherlands IND provide employer registers. Review vacancy wording and the official route separately. Record the source, date and uncertainties. |
 
 ## Deployment after approval
@@ -45,7 +45,7 @@ Microsoft lists B1ms compute at about $12.41 per month on the pricing page. Cont
 
 ## Release status
 
-The pilot implements a local, single-owner review workflow. Automated registry lookups and jurisdiction-specific work-authorisation rules, broader market feeds, form extraction, automatic recruiter email ingestion, live ATS submission, independent submission confirmation, enforced cost ceilings and production security and monitoring validation remain open. The sandbox sender is deliberately isolated from employer sites. Application Insights is provisioned by Terraform, while app telemetry instrumentation still needs implementation. The initial deployment uses shared Terraform inputs for separate environments rather than reusable resource modules. Terraform formatting and provider download were verified here. Provider schema validation and Azure plan/apply require an environment that can run the provider plugin and authorised Azure access.
+The pilot implements a local, single-owner review workflow. Registry coverage beyond UK and Netherlands and jurisdiction-specific work-authorisation rules, broader market feeds, form extraction, automatic recruiter email ingestion, live ATS submission, independent submission confirmation, enforced cost ceilings and production security and monitoring validation remain open. The sandbox sender is deliberately isolated from employer sites. Application Insights is provisioned by Terraform, while app telemetry instrumentation still needs implementation. The initial deployment uses shared Terraform inputs for separate environments rather than reusable resource modules. Terraform formatting and provider download were verified here. Provider schema validation and Azure plan/apply require an environment that can run the provider plugin and authorised Azure access.
 
 - [UK licensed sponsors register](https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers)
 - [Netherlands IND recognised sponsors register](https://ind.nl/en/public-register-recognised-sponsors/public-register-work)

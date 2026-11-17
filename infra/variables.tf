@@ -51,3 +51,20 @@ variable "enable_runtime" {
   type    = bool
   default = false
 }
+
+variable "verify_public_registries" {
+  type    = bool
+  default = false
+}
+
+variable "notification_secret_uris" {
+  type        = map(string)
+  default     = {}
+  description = "Optional map of supported Telegram and SMTP environment names to Key Vault secret URIs."
+  validation {
+    condition = alltrue([for name in keys(var.notification_secret_uris) : contains([
+      "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SMTP_HOST", "SMTP_PORT", "SMTP_FROM", "SMTP_TO", "SMTP_USER", "SMTP_PASSWORD"
+    ], name)])
+    error_message = "Provide only supported Telegram or SMTP settings."
+  }
+}

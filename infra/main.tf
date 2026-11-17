@@ -154,15 +154,17 @@ resource "azurerm_container_app_environment" "main" {
 
 locals {
   runtime_env = {
-    APP_ENV          = "production"
-    ENTRA_TENANT     = data.azurerm_client_config.current.tenant_id
-    ENTRA_AUDIENCE   = var.entra_client_id
-    ENTRA_CLIENT_ID  = var.entra_client_id
-    ENTRA_SCOPE      = "api://${var.entra_client_id}/access_as_user"
-    ENTRA_OWNER_OID  = var.entra_owner_oid
-    AZURE_CLIENT_ID  = azurerm_user_assigned_identity.apps.client_id
-    BLOB_ACCOUNT_URL = azurerm_storage_account.main.primary_blob_endpoint
-    JOB_BOARDS_JSON  = var.job_boards_json
+    APP_ENV                  = "production"
+    ENTRA_TENANT             = data.azurerm_client_config.current.tenant_id
+    ENTRA_AUDIENCE           = var.entra_client_id
+    ENTRA_CLIENT_ID          = var.entra_client_id
+    ENTRA_SCOPE              = "api://${var.entra_client_id}/access_as_user"
+    ENTRA_OWNER_OID          = var.entra_owner_oid
+    AZURE_CLIENT_ID          = azurerm_user_assigned_identity.apps.client_id
+    BLOB_ACCOUNT_URL         = azurerm_storage_account.main.primary_blob_endpoint
+    JOB_BOARDS_JSON          = var.job_boards_json
+    NOTIFICATION_CHANNELS    = join(",", compact([contains(keys(var.notification_secret_uris), "TELEGRAM_BOT_TOKEN") ? "telegram" : "", contains(keys(var.notification_secret_uris), "SMTP_HOST") ? "email" : ""]))
+    VERIFY_PUBLIC_REGISTRIES = var.verify_public_registries ? "yes" : "no"
   }
 }
 
@@ -244,6 +246,14 @@ resource "azurerm_container_app_job" "worker" {
       key_vault_secret_id = secret.value
     }
   }
+  dynamic "secret" {
+    for_each = var.notification_secret_uris
+    content {
+      name                = lower(replace(secret.key, "_", "-"))
+      identity            = azurerm_user_assigned_identity.apps.id
+      key_vault_secret_id = secret.value
+    }
+  }
   template {
     container {
       name    = "worker"
@@ -254,6 +264,13 @@ resource "azurerm_container_app_job" "worker" {
       env {
         name        = "DATABASE_URL"
         secret_name = "database"
+      }
+      dynamic "env" {
+        for_each = var.notification_secret_uris
+        content {
+          name        = env.key
+          secret_name = lower(replace(env.key, "_", "-"))
+        }
       }
       dynamic "env" {
         for_each = var.openai_secret_uri == null ? [] : ["openai"]

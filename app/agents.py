@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .db import audit, database, now
 from .discovery import canonical
+from .notifications import enqueue
 
 
 class Strict(BaseModel):
@@ -193,9 +194,12 @@ def compose(job, profile):
 
 
 JOB_QUERY = """SELECT v.*, e.excluded, s.status, s.verified, s.india_considered, s.relocation, s.route,
-s.evidence, s.source AS evidence_source, m.score, m.detail, d.state AS draft_state
+s.evidence, s.source AS evidence_source, m.score, m.detail, d.state AS draft_state,
+es.legal_name AS sponsor_entity, es.source AS sponsor_register, es.route AS sponsor_register_route,
+es.detail AS sponsor_register_detail, es.verified AS sponsor_register_checked
 FROM vacancy v JOIN employer e ON e.name=v.employer LEFT JOIN sponsorship s ON s.vacancy_id=v.id
-LEFT JOIN matching m ON m.vacancy_id=v.id LEFT JOIN draft d ON d.vacancy_id=v.id"""
+LEFT JOIN matching m ON m.vacancy_id=v.id LEFT JOIN draft d ON d.vacancy_id=v.id
+LEFT JOIN employer_sponsor es ON es.employer=v.employer AND es.country=v.country"""
 
 
 def prepare(db, job, profile, actor):
@@ -215,6 +219,11 @@ def prepare(db, job, profile, actor):
         (job["id"], cv, letter, json.dumps(answers), json.dumps(unresolved)),
     )
     audit(db, actor, "draft_prepared", job["id"])
+    enqueue(db, f"draft:{job['id']}", "An eligible application draft is ready for review in Job Hunter.")
+    if job["score"] >= 90:
+        enqueue(
+            db, f"excellent:{job['id']}", "An excellent sponsorship-eligible match is ready in Job Hunter."
+        )
     return db.one("SELECT * FROM draft WHERE vacancy_id=?", (job["id"],))
 
 
@@ -263,6 +272,8 @@ def verify(db, job, data, actor):
             "UPDATE matching SET score=?,detail=? WHERE vacancy_id=?", (score, json.dumps(detail), job["id"])
         )
     audit(db, actor, "sponsorship_reviewed", job["id"])
+    if data.status == "confirmed":
+        enqueue(db, f"sponsor:{job['id']}", "Vacancy sponsorship was confirmed in Job Hunter.")
 
 
 def process(job_id):

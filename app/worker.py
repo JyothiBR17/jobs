@@ -2,12 +2,15 @@ import os
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from .agents import process
 from .db import audit, checkpoint, database, migrate, now
 from .discovery import boards, fetch_board, ingest
+from .notifications import enqueue
+from .registry import refresh_registries
 
 
 def discover():
@@ -29,20 +32,35 @@ def discover():
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             with database(write=True) as db:
                 audit(db, "discovery", "board_failed", source + "/" + type(exc).__name__)
+                enqueue(
+                    db,
+                    f"source-failed:{source}:{now()[:10]}",
+                    "A discovery source needs attention in Job Hunter.",
+                )
 
 
 def enqueue_report():
-    date = datetime.now(timezone.utc).date().isoformat()
+    tz = ZoneInfo(os.getenv("REPORT_TIMEZONE", "Asia/Kolkata"))
+    local = datetime.now(tz)
+    if local.hour < int(os.getenv("REPORT_HOUR", "19")):
+        return
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     with database(write=True) as db:
         review = db.one("SELECT COUNT(*) AS n FROM draft WHERE state='review'")["n"]
-        submitted = db.one("SELECT COUNT(*) AS n FROM submission")["n"]
-        message = f"AI International Job Hunter report. Awaiting approval: {review}. Submissions recorded: {submitted}."
-        for channel, key in (("telegram", "TELEGRAM_BOT_TOKEN"), ("email", "SMTP_HOST")):
-            if os.getenv(key):
-                db.execute(
-                    "INSERT INTO outbox(id,message,channel,available) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",
-                    (f"daily:{date}:{channel}", message, channel, now()),
-                )
+        sponsored = db.one("SELECT COUNT(*) AS n FROM sponsorship WHERE status='confirmed'")["n"]
+        interviews = db.one("SELECT COUNT(*) AS n FROM tracking WHERE status='interview'")["n"]
+        for label, day in [("daily", start), ("weekly", start - timedelta(days=6))]:
+            if label == "weekly" and local.weekday() != 6:
+                continue
+            new = db.one("SELECT COUNT(*) AS n FROM vacancy WHERE discovered>=?", (day.isoformat(),))["n"]
+            submitted = db.one(
+                "SELECT COUNT(*) AS n FROM submission WHERE recorded_at>=?", (day.isoformat(),)
+            )["n"]
+            message = (
+                f"Job Hunter {label} report. New vacancies: {new}. Confirmed sponsorship records: {sponsored}. "
+                f"Awaiting approval: {review}. Submissions recorded in period: {submitted}. Interviews recorded: {interviews}."
+            )
+            enqueue(db, f"{label}:{local.date().isoformat()}", message)
 
 
 def deliver(item):
@@ -66,7 +84,8 @@ def deliver(item):
             os.environ["SMTP_HOST"], int(os.getenv("SMTP_PORT", "465")), timeout=15
         ) as smtp:
             smtp.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
-            smtp.send_message(message)
+            if smtp.send_message(message):
+                raise ValueError("SMTP rejected a recipient")
 
 
 def drain():
@@ -91,6 +110,7 @@ def drain():
 def main():
     migrate()
     discover()
+    refresh_registries()
     if os.getenv("OPENAI_API_KEY"):
         with database() as db:
             jobs = db.all("""SELECT v.id FROM vacancy v LEFT JOIN matching m ON m.vacancy_id=v.id

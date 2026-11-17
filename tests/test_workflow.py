@@ -12,6 +12,7 @@ from app.agents import Analysis, Profile, evaluate
 from app.api import app
 from app.db import checkpoint, database
 from app.discovery import country_for, feed, ingest
+from app.registry import lookup
 from app.submission import sandbox_submit
 from app.worker import drain
 
@@ -61,7 +62,7 @@ class Workflow(unittest.TestCase):
         if os.getenv("TEST_POSTGRES_URL"):
             with database(write=True) as db:
                 db.execute(
-                    "TRUNCATE model_usage,tracking,submission,approval,draft,matching,sponsorship,vacancy,employer,candidate,audit,checkpoint,outbox"
+                    "TRUNCATE employer_sponsor,model_usage,tracking,submission,approval,draft,matching,sponsorship,vacancy,employer,candidate,audit,checkpoint,outbox"
                 )
         with database(write=True) as db:
             self.id = ingest(db, POSTING)
@@ -290,6 +291,29 @@ class Workflow(unittest.TestCase):
             self.assertEqual("sandbox:receipt", sandbox_submit(self.id, lambda *_: "sandbox:receipt"))
             with self.assertRaises(ValueError):
                 sandbox_submit(self.id, lambda *_: self.fail("Duplicate sender was called"))
+
+    def test_uk_public_register_is_licence_only(self):
+        def respond(request):
+            if request.url.host == "www.gov.uk":
+                return httpx.Response(
+                    200,
+                    text='<a href="https://assets.publishing.service.gov.uk/register-of-sponsors.csv">CSV</a>',
+                )
+            return httpx.Response(
+                200,
+                text="Organisation Name,Route,Type & Rating\nSandbox Employer,Skilled Worker,Worker (A rating)\n",
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+            entity = lookup(client, "GB", {"sandbox employer"})["sandbox employer"]
+        with database(write=True) as db:
+            db.execute(
+                "INSERT INTO employer_sponsor VALUES (?,?,?,?,?,?,?)",
+                ("Sandbox Employer", "GB", *entity, "2026-11-17"),
+            )
+        result = self.client.get("/api/jobs").json()[0]
+        self.assertEqual("licensed_only", result["status"])
+        self.assertFalse(result["eligible"])
 
     def test_notification_retry(self):
         with database(write=True) as db:

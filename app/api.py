@@ -14,6 +14,7 @@ from .agents import JOB_QUERY, Profile, Strict, Verify, classify, eligible, prep
 from .auth import user
 from .db import audit, database, migrate, now
 from .files import store_resume
+from .notifications import enqueue
 
 
 @asynccontextmanager
@@ -67,6 +68,8 @@ def jobs(actor=Depends(user)):
         rows = db.all(JOB_QUERY + " ORDER BY v.discovered DESC LIMIT 1000")
     for item in rows:
         item["eligible"] = eligible(item)
+        if item["status"] in (None, "unknown") and item["sponsor_register"]:
+            item["status"] = "licensed_only"
         item["evidence_candidates"] = classify(item["description"])
         item["detail"] = json.loads(item["detail"] or "{}")
     return rows
@@ -256,6 +259,7 @@ def record_submission(job_id: str, data: Confirmation, actor=Depends(user)):
         db.execute("INSERT INTO submission VALUES (?,?,?,?)", (job_id, "candidate_reported", ref, now()))
         db.execute("UPDATE draft SET state='submitted' WHERE vacancy_id=?", (job_id,))
         audit(db, actor, "manual_confirmation_recorded", job_id)
+        enqueue(db, f"submission:{job_id}", "A candidate-reported submission was recorded in Job Hunter.")
     return {"recorded": True, "verification": "candidate_reported"}
 
 
@@ -275,6 +279,12 @@ def track(job_id: str, data: Status, actor=Depends(user)):
             (str(uuid4()), job_id, data.status, data.description, data.event_time),
         )
         audit(db, actor, data.status, job_id)
+        if data.status in {"interview", "recruiter_response"}:
+            enqueue(
+                db,
+                f"{data.status}:{job_id}:{data.event_time}",
+                "An application update was recorded in Job Hunter.",
+            )
     return {"saved": True}
 
 

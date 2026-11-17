@@ -140,7 +140,7 @@ function App() {
       {tracking.events.filter(e=>page!=='Interview Tracker'||e.status==='interview').map(e=><article className="list" key={e.id}><strong>{e.status.replaceAll('_',' ')}</strong><span>{e.description}</span><time>{format(e.event_time)}</time></article>)}
       {!tracking.submissions.length && <p className="empty">No submissions recorded.</p>}</>}
     {['Security and Audit Logs','Agent Activity'].includes(page) && <div className="table"><table><thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Record</th></tr></thead><tbody>
-      {events.filter(e=>page!=='Agent Activity'||['discovery','matching'].includes(e.actor)).map(e=><tr key={e.id}><td>{format(e.time)}</td><td>{e.actor}</td><td>{e.action}</td><td>{e.target}</td></tr>)}</tbody></table></div>}
+      {events.filter(e=>page!=='Agent Activity'||['discovery','matching','sponsorship_registry'].includes(e.actor)).map(e=><tr key={e.id}><td>{format(e.time)}</td><td>{e.actor}</td><td>{e.action}</td><td>{e.target}</td></tr>)}</tbody></table></div>}
     {page==='Integrations' && <section><h2>Provider configuration</h2><p>Configure public boards, OpenAI, email and Telegram in the server environment. Approved applications open the employer’s hosted form.</p></section>}
     {page==='Settings' && <section><h2>Candidate profile</h2><p>Save candidate facts, upload the original PDF, then set source_verified to true after comparing the facts against the résumé.</p>
       <label>Import candidate profile JSON<input type="file" accept=".json,application/json" onChange={async e=>{const file=e.target.files[0]; if (file) setProfile(await file.text());}}/></label>
@@ -155,7 +155,7 @@ function App() {
         <h3>Match evidence</h3>
         <p>Experience {j.detail.experience_years ?? 'unknown'} · Deadline {j.detail.deadline ?? 'unknown'}</p>
         {['architecture','automation','security','experience','location_compensation'].map(k=>j.detail[k]&&<p key={k}>{k.replaceAll('_',' ')} {j.detail[k].awarded}/{j.detail[k].weight}<br/>{j.detail[k].requirement||'No verified match'}<br/>{j.detail[k].evidence}</p>)}
-        <h3>Sponsorship evidence</h3>{j.evidence&&<p>{j.evidence} <a href={j.evidence_source} target="_blank" rel="noreferrer">Source ↗</a> · {format(j.verified)}</p>}
+        <h3>Sponsorship evidence</h3>{j.sponsor_register && <p>Registry match for {j.sponsor_entity} · {j.sponsor_register_route} · {j.sponsor_register_detail} · {format(j.sponsor_register_checked)}. <a href={j.sponsor_register} target="_blank" rel="noreferrer">Official register ↗</a></p>}{j.evidence&&<p>{j.evidence} <a href={j.evidence_source} target="_blank" rel="noreferrer">Source ↗</a> · {format(j.verified)}</p>}
         {j.evidence_candidates.length>0&&<ul>{j.evidence_candidates.map((x,i)=><li key={i}>{x}</li>)}</ul>}
         <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget); const flag=k=>f.get(k)===''?null:f.get(k)==='yes';
           action(()=>api('/jobs/'+j.id+'/sponsorship','PUT',{status:f.get('status'),source:f.get('source'),evidence:f.get('evidence'),route:f.get('route')||null,
