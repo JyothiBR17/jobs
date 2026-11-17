@@ -1,0 +1,72 @@
+name: Job Hunter UK South Entra redirect repair
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/uksouth-entra-redirect.yml]
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: jobsai-uksouth-entra-repair
+  cancel-in-progress: false
+jobs:
+  repair:
+    environment: production-plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Register UK South redirect on Job Hunter app only
+        env:
+          TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+          JOBHUNTER_APP_ID: c6ae2da9-c96b-4677-a307-143b88e02a24
+          REDIRECT: https://jobsai-uksouth-jyothibr17.uksouth.azurecontainer.io
+        run: |
+          set -euo pipefail
+          export JOBHUNTER_APP_ID REDIRECT
+          python - <<'PY'
+          import json,os
+          inputs=json.loads(os.environ["TF_VARS"])
+          assert inputs["entra_client_id"]==os.environ["JOBHUNTER_APP_ID"], "Configured client differs; no changes made"
+          assert os.environ["REDIRECT"]=="https://jobsai-uksouth-jyothibr17.uksouth.azurecontainer.io"
+          PY
+          if ! az ad app show --id "$JOBHUNTER_APP_ID" --output json > /tmp/jobhunter-app.json; then
+            echo "::error::Deployment identity lacks Microsoft Graph access to the Job Hunter app registration. Open Microsoft Entra > App registrations > owned applications > Authentication > Single-page application and add $REDIRECT. No other application was changed."
+            exit 1
+          fi
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          app=json.loads(Path("/tmp/jobhunter-app.json").read_text())
+          name=app.get("displayName","")
+          client=app.get("appId")
+          if client != os.environ["JOBHUNTER_APP_ID"]:
+              raise SystemExit("App id mismatch; no updates allowed")
+          if not any(x in name.lower().replace(" ","") for x in ("jobhunter","jobsai","jobhunt")):
+              raise SystemExit(f"Application display name {name!r} is not clearly Job Hunter. Refusing to touch any other project.")
+          existing=app.get("spa") or {}
+          uris=list(existing.get("redirectUris") or [])
+          target=os.environ["REDIRECT"]
+          if target not in uris:
+              uris.append(target)
+          payload={"spa":{"redirectUris":uris}}
+          Path("/tmp/jobhunter-patch.json").write_text(json.dumps(payload))
+          Path("/tmp/jobhunter-app-object-id").write_text(app["id"])
+          print(f"Verified Job Hunter app {name!r}; preserving {len(uris)-1 if target in uris else len(uris)} existing SPA redirect entries")
+          PY
+          object_id=$(cat /tmp/jobhunter-app-object-id)
+          az rest --method PATCH --uri "https://graph.microsoft.com/v1.0/applications/$object_id" --headers "Content-Type=application/json" --body @/tmp/jobhunter-patch.json --output none
+          actual=$(az ad app show --id "$JOBHUNTER_APP_ID" --query "spa.redirectUris" --output json)
+          ACTUAL="$actual" python - <<'PY'
+          import json, os
+          assert os.environ["REDIRECT"] in json.loads(os.environ["ACTUAL"]), "Redirect missing after patch"
+          print("Successfully verified Job Hunter UK South SPA redirect URI")
+          PY
+          echo "## Job Hunter login repair" >> "$GITHUB_STEP_SUMMARY"
+          echo "Registered UK South SPA redirect: $REDIRECT" >> "$GITHUB_STEP_SUMMARY"
+          echo "Only the verified Job Hunter app registration was patched; AegisSOC untouched." >> "$GITHUB_STEP_SUMMARY"
