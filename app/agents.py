@@ -276,9 +276,49 @@ def verify(db, job, data, actor):
         enqueue(db, f"sponsor:{job['id']}", "Vacancy sponsorship was confirmed in Job Hunter.")
 
 
+def evidence_only_analysis(job, profile):
+    """Conservative literal-evidence matching when no LLM is configured.
+
+    Missing requirements receive zero points. This never verifies sponsorship.
+    """
+    cues = {
+        "architecture": ("azure landing zone", "landing zone", "cloud architecture", "azure", "cloud"),
+        "automation": ("terraform", "infrastructure as code", "ci/cd", "automation", "devops"),
+        "security": ("azure policy", "rbac", "zero trust", "defender for cloud", "security"),
+        "experience": ("years of", "8 years", "5 years", "experience"),
+    }
+    source = (job["description"] + " " + job["title"]).casefold()
+    comparisons = {}
+    for category, phrases in cues.items():
+        match = next(
+            (
+                (phrase, index)
+                for phrase in phrases
+                if phrase in source
+                for index, fact in enumerate(profile.facts)
+                if fact.category == category and phrase in fact.text.casefold()
+            ),
+            None,
+        )
+        comparisons[category] = Comparison(
+            requirement=match[0] if match else "",
+            fact_index=match[1] if match else -1,
+            points=100 if match else 0,
+        )
+    comparisons["location_compensation"] = Comparison(requirement="", fact_index=-1, points=0)
+    focus = "security" if comparisons["security"].points > comparisons["architecture"].points else "architecture"
+    return Analysis(
+        **comparisons,
+        seniority="unknown",
+        experience_years=None,
+        salary=None,
+        work_arrangement=None,
+        deadline=None,
+        preferred_profile=focus,
+    )
+
+
 def process(job_id):
-    if not os.environ.get("OPENAI_API_KEY"):
-        return
     with database() as db:
         job = db.one(JOB_QUERY + " WHERE v.id=?", (job_id,))
         candidate = db.one("SELECT profile FROM candidate WHERE id=1")
@@ -286,6 +326,19 @@ def process(job_id):
         return
     profile = Profile.model_validate_json(candidate["profile"])
     if not profile.source_verified:
+        return
+    if not os.environ.get("OPENAI_API_KEY"):
+        with database(write=True) as db:
+            fresh = db.one(JOB_QUERY + " WHERE v.id=?", (job_id,))
+            current = db.one("SELECT profile FROM candidate WHERE id=1")
+            if not fresh or fresh["detail"] or current != candidate:
+                return
+            score, detail = evaluate(fresh, profile, evidence_only_analysis(fresh, profile))
+            detail["analysis_mode"] = "literal_evidence_no_model"
+            db.execute("INSERT INTO matching VALUES (?,?,?)", (job_id, score, json.dumps(detail)))
+            updated = dict(fresh, score=score, detail=json.dumps(detail))
+            if eligible(updated):
+                prepare(db, updated, profile, "matching")
         return
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     limit = max(0, int(os.getenv("MAX_MONTHLY_MODEL_REQUESTS", "1000")))
