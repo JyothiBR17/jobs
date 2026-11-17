@@ -1,0 +1,24 @@
+name: jobsai Azure diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/azure-check.yml
+      - scripts/azure-check.py
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production-plan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Inspect regional availability and partial deployment
+        run: python scripts/azure-check.py
