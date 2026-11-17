@@ -35,3 +35,19 @@ jobs:
           echo "## Live Job Hunter UK South" >> "$GITHUB_STEP_SUMMARY"
           echo "Dashboard: https://$fqdn" >> "$GITHUB_STEP_SUMMARY"
           echo "Regional resource group: $RG. No other regions or apps were inspected or modified." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check Job Hunter Entra sign-in redirect registration
+        env:
+          TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+        run: |
+          set -euo pipefail
+          client=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"])["entra_client_id"])')
+          info=$(az ad app show --id "$client" --query '{name:displayName,clientId:appId,spaRedirects:spa.redirectUris}' -o json 2>/dev/null || true)
+          if [[ -z "$info" ]]; then
+            echo "::warning::Unable to check Entra app registration. Dashboard health is verified, but interactive sign-in requires manual validation."
+            exit 0
+          fi
+          echo "$info"
+          if ! echo "$info" | python -c 'import json,sys;u=json.load(sys.stdin).get("spaRedirects") or [];assert any("jobsai-uksouth-jyothibr17.uksouth.azurecontainer.io" in x for x in u)'; then
+            echo "::warning::Entra app does not yet list the UK South SPA redirect URI; login may require a dedicated app registration change."
+          fi
