@@ -111,20 +111,20 @@ def main():
     migrate()
     discover()
     refresh_registries()
-    if os.getenv("OPENAI_API_KEY"):
-        with database() as db:
-            jobs = db.all("""SELECT v.id FROM vacancy v LEFT JOIN matching m ON m.vacancy_id=v.id
-                LEFT JOIN checkpoint c ON c.key=v.id
-                WHERE v.active=1 AND m.vacancy_id IS NULL ORDER BY CASE WHEN c.value IS NULL THEN 0 ELSE 1 END,c.value,v.discovered LIMIT 10""")
-        for job in jobs:
-            try:
-                process(job["id"])
-            except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError) as exc:
-                with database(write=True) as db:
-                    audit(db, "matching", "analysis_failed", job["id"] + "/" + type(exc).__name__)
-            finally:
-                with database(write=True) as db:
-                    checkpoint(db, job["id"], now())
+    # Evidence-only ranking runs without an API key; an LLM is optional.
+    with database() as db:
+        jobs = db.all("""SELECT v.id FROM vacancy v LEFT JOIN matching m ON m.vacancy_id=v.id
+            LEFT JOIN checkpoint c ON c.key=v.id
+            WHERE v.active=1 AND m.vacancy_id IS NULL ORDER BY CASE WHEN c.value IS NULL THEN 0 ELSE 1 END,c.value,v.discovered LIMIT 10""")
+    for job in jobs:
+        try:
+            process(job["id"])
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError) as exc:
+            with database(write=True) as db:
+                audit(db, "matching", "analysis_failed", job["id"] + "/" + type(exc).__name__)
+        finally:
+            with database(write=True) as db:
+                checkpoint(db, job["id"], now())
     enqueue_report()
     drain()
 
