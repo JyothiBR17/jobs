@@ -51,9 +51,9 @@ resource "azurerm_private_dns_zone_virtual_network_link" "pg" {
 resource "azurerm_postgresql_flexible_server" "main" {
   name                              = "${var.prefix}-pg"
   resource_group_name               = azurerm_resource_group.main.name
-  location                          = var.location
+  location                          = var.workload_location
   version                           = "16"
-  delegated_subnet_id               = azurerm_subnet.pg.id
+  delegated_subnet_id               = local.postgres_subnet_id
   private_dns_zone_id               = azurerm_private_dns_zone.pg.id
   public_network_access_enabled     = false
   administrator_login               = "jobhuntadmin"
@@ -62,7 +62,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   storage_mb                        = 32768
   sku_name                          = "B_Standard_B1ms"
   backup_retention_days             = 14
-  depends_on                        = [azurerm_private_dns_zone_virtual_network_link.pg]
+  depends_on                        = [azurerm_private_dns_zone_virtual_network_link.pg, azurerm_private_dns_zone_virtual_network_link.workload]
 }
 
 resource "azurerm_postgresql_flexible_server_database" "main" {
@@ -149,10 +149,10 @@ resource "azurerm_application_insights" "main" {
 
 resource "azurerm_container_app_environment" "main" {
   name                       = "${var.prefix}-env"
-  location                   = var.location
+  location                   = var.workload_location
   resource_group_name        = azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
-  infrastructure_subnet_id   = azurerm_subnet.apps.id
+  infrastructure_subnet_id   = local.apps_subnet_id
   workload_profile {
     name                  = "Consumption"
     workload_profile_type = "Consumption"
@@ -227,7 +227,7 @@ resource "azurerm_container_app" "web" {
 resource "azurerm_container_app_job" "worker" {
   count                        = var.enable_runtime ? 1 : 0
   name                         = "${var.prefix}-worker"
-  location                     = var.location
+  location                     = var.workload_location
   resource_group_name          = azurerm_resource_group.main.name
   container_app_environment_id = azurerm_container_app_environment.main.id
   replica_timeout_in_seconds   = 1100

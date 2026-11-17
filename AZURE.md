@@ -73,3 +73,7 @@ The deployment pipeline uses infra/backend.hcl. State is stored in jobsai-produc
 ## Partial deployment recovery
 
 The initial apply encountered an East US PostgreSQL capability failure, an East US Container Apps environment quota limit, and a storage authentication mismatch. The provider now uses Entra authentication for Blob operations. Terraform grants the deployment identity Blob Data Contributor within jobsai-rg. On apply, the workflow checks for the known jobsai storage account missing from state and imports it after establishing data-plane permissions. The existing successful resources are reconciled from remote state. Regional availability and quota still require verification before retrying.
+
+## Central US recovery
+
+Central US is the approved region for PostgreSQL, the Container Apps environment, the scheduled worker, and a new jobsai-centralus-vnet. Existing support resources use the original location variable. The recovery pipeline adds the Central US network instead of replacing the earlier East US network. It reconciles deployment Blob permissions, imports the known partial storage account when missing from Terraform state, and displays the resource action summary. Any planned deletion stops the workflow for review. Deployment requires the configured production environment approval. The current recovery starts with the repository's enable_runtime setting.

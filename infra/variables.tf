@@ -69,3 +69,9 @@ variable "notification_secret_uris" {
     error_message = "Provide only supported Telegram or SMTP settings."
   }
 }
+
+variable "workload_location" {
+  type        = string
+  default     = "centralus"
+  description = "Approved region for PostgreSQL, Container Apps and their private network."
+}

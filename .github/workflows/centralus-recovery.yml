@@ -1,0 +1,60 @@
+name: jobsai Central US recovery
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/centralus-recovery.yml
+      - scripts/terraform-recover.sh
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: jobsai-production
+  cancel-in-progress: false
+env:
+  TF_INPUT: "0"
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_TENANT_ID: d69bf108-84a8-4b7f-b72a-73d0181ae024
+  ARM_SUBSCRIPTION_ID: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: production-plan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.5"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+      - name: Repair storage state and plan Central US resources
+        env:
+          ARM_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
+          TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+        run: bash scripts/terraform-recover.sh plan
+  deploy:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.5"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+      - name: Apply Central US recovery
+        env:
+          ARM_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
+          TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+        run: bash scripts/terraform-recover.sh apply
