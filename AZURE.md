@@ -69,3 +69,7 @@ The application workflow builds a source-only GHCR image on main changes and dep
 ## Selected Terraform state backend
 
 The deployment pipeline uses infra/backend.hcl. State is stored in jobsai-production.tfstate in the existing jobs container of stgaccpocsoc in socpocmi-rg. Backend storage remains managed outside this application stack. The deployment identity principal 0a34ff40-76b9-4459-b5d2-6fde206db4ff needs Storage Blob Data Contributor at that container scope. Storage networking must permit the selected GitHub runner to access the Blob endpoint. Container access and a backend initialisation have yet to be verified against Azure.
+
+## Partial deployment recovery
+
+The initial apply encountered an East US PostgreSQL capability failure, an East US Container Apps environment quota limit, and a storage authentication mismatch. The provider now uses Entra authentication for Blob operations. Terraform grants the deployment identity Blob Data Contributor within jobsai-rg. On apply, the workflow checks for the known jobsai storage account missing from state and imports it after establishing data-plane permissions. The existing successful resources are reconciled from remote state. Regional availability and quota still require verification before retrying.

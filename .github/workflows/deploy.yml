@@ -74,6 +74,16 @@ jobs:
           test -n "$TF_VARS"
           printf '%s' "$TF_VARS" > infra/ci.auto.tfvars.json
           terraform -chdir=infra init -backend-config=backend.hcl
+          # Recover the account created before the failed storage data-plane check.
+          prefix=$(python -c 'import json; print(json.load(open("infra/ci.auto.tfvars.json")).get("prefix", "jobsai"))')
+          [[ "$prefix" =~ ^jobsai[a-z0-9]{0,10}$ ]]
+          storage_id="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$prefix-rg/providers/Microsoft.Storage/storageAccounts/${prefix}docs"
+          if ! terraform -chdir=infra state list | grep -Fxq 'azurerm_storage_account.main'; then
+            if az storage account show --ids "$storage_id" --output none 2>/dev/null; then
+              terraform -chdir=infra apply -target=azurerm_role_assignment.deployment_storage -auto-approve
+              terraform -chdir=infra import azurerm_storage_account.main "$storage_id"
+            fi
+          fi
           terraform -chdir=infra plan -out=release.tfplan
           terraform -chdir=infra apply release.tfplan
           endpoint=$(terraform -chdir=infra output -raw web_url 2>/dev/null || true)

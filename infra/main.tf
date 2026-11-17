@@ -72,7 +72,14 @@ resource "azurerm_postgresql_flexible_server_database" "main" {
   charset   = "UTF8"
 }
 
+resource "azurerm_role_assignment" "deployment_storage" {
+  scope                = azurerm_resource_group.main.id
+  principal_id         = data.azurerm_client_config.current.object_id
+  role_definition_name = "Storage Blob Data Contributor"
+}
+
 resource "azurerm_storage_account" "main" {
+  depends_on                      = [azurerm_role_assignment.deployment_storage]
   name                            = "${var.prefix}docs"
   resource_group_name             = azurerm_resource_group.main.name
   location                        = var.location
