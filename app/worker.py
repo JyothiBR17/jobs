@@ -112,10 +112,12 @@ def main():
     discover()
     refresh_registries()
     # Evidence-only ranking runs without an API key; an LLM is optional.
+    batch_limit = 10 if os.getenv("OPENAI_API_KEY") else 100
     with database() as db:
         jobs = db.all("""SELECT v.id FROM vacancy v LEFT JOIN matching m ON m.vacancy_id=v.id
             LEFT JOIN checkpoint c ON c.key=v.id
-            WHERE v.active=1 AND m.vacancy_id IS NULL ORDER BY CASE WHEN c.value IS NULL THEN 0 ELSE 1 END,c.value,v.discovered LIMIT 10""")
+            WHERE v.active=1 AND m.vacancy_id IS NULL ORDER BY CASE WHEN c.value IS NULL THEN 0 ELSE 1 END,c.value,v.discovered LIMIT ?""",
+            (batch_limit,))
     for job in jobs:
         try:
             process(job["id"])
