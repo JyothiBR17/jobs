@@ -1,0 +1,149 @@
+name: Job Hunter UK South isolated deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/uksouth-deploy.yml
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: jobsai-uksouth-only
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    env:
+      LOCATION: uksouth
+      RESOURCE_GROUP: jobsai-uksouth-rg
+      PLAN_NAME: jobsai-uksouth-plan
+      WEBAPP_NAME: jobsai-uksouth-jyothibr17
+      STORAGE_NAME: jobsaiuksouth17
+      IDENTITY_NAME: jobsai-uksouth-runtime
+      TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and package Job Hunter
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run build
+          test -f app/static/index.html
+          zip -q -r jobhunter.zip app migrations requirements.txt -x '*/__pycache__/*'
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Enforce UK South and Job Hunter only
+        run: |
+          set -euo pipefail
+          [[ "$LOCATION" == "uksouth" && "$RESOURCE_GROUP" == "jobsai-uksouth-rg" ]]
+          [[ "$PLAN_NAME" == "jobsai-uksouth-plan" && "$WEBAPP_NAME" == "jobsai-uksouth-jyothibr17" ]]
+          [[ "$STORAGE_NAME" == "jobsaiuksouth17" && "$IDENTITY_NAME" == "jobsai-uksouth-runtime" ]]
+          python - <<'PY'
+          import json, os, re
+          values = json.loads(os.environ['TF_VARS'])
+          for key in ('entra_client_id', 'entra_owner_oid'):
+              assert re.fullmatch('[0-9a-fA-F-]{36}', values.get(key, '')), f'Missing Job Hunter {key}'
+          print('Validated UK South Job Hunter inputs')
+          PY
+          selected=$(az account show --query id -o tsv)
+          [[ "$selected" == "ed8f4826-ca81-4919-a8e9-79d5b2781b98" ]]
+          if az group show -n "$RESOURCE_GROUP" -o none 2>/dev/null; then
+            location=$(az group show -n "$RESOURCE_GROUP" --query location -o tsv)
+            [[ "${location,,}" == "uksouth" ]] || { echo "::error::Existing Job Hunter group is outside UK South"; exit 1; }
+          fi
+      - name: Create isolated UK South compute
+        run: |
+          set -euo pipefail
+          az group create -n "$RESOURCE_GROUP" -l "$LOCATION" -o none
+          if ! az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" -o none 2>/dev/null; then
+            if az appservice plan create -g "$RESOURCE_GROUP" -n "$PLAN_NAME" -l "$LOCATION" --is-linux --sku F1 -o none; then
+              echo 'Free App Service plan provisioned'
+            elif az appservice plan create -g "$RESOURCE_GROUP" -n "$PLAN_NAME" -l "$LOCATION" --is-linux --sku B1 -o none; then
+              echo 'Basic B1 App Service plan provisioned'
+            else
+              echo '::error::No available F1/B1 Linux App Service quota in UK South. No other regions or projects will be used.'
+              exit 1
+            fi
+          fi
+          location=$(az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --query location -o tsv)
+          [[ "${location,,}" == "uk south" || "${location,,}" == "uksouth" ]] || { echo "::error::Plan region mismatch"; exit 1; }
+          sku=$(az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --query sku.name -o tsv)
+          [[ "$sku" == "F1" || "$sku" == "B1" ]] || { echo "::error::Unexpected existing hosting SKU"; exit 1; }
+          echo "SERVICE_SKU=$sku" >> "$GITHUB_ENV"
+      - name: Create isolated UK South private resume storage
+        run: |
+          set -euo pipefail
+          if ! az identity show -g "$RESOURCE_GROUP" -n "$IDENTITY_NAME" -o none 2>/dev/null; then
+            az identity create -g "$RESOURCE_GROUP" -n "$IDENTITY_NAME" -l "$LOCATION" -o none
+          fi
+          if ! az storage account show -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" -o none 2>/dev/null; then
+            az storage account create -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" -l "$LOCATION" --kind StorageV2 --sku Standard_LRS --min-tls-version TLS1_2 --allow-blob-public-access false --allow-shared-key-access true -o none
+          fi
+          storage_id=$(az storage account show -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" --query id -o tsv)
+          storage_location=$(az storage account show -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" --query location -o tsv)
+          [[ "${storage_location,,}" == "uksouth" && "$storage_id" == *"/resourceGroups/jobsai-uksouth-rg/providers/Microsoft.Storage/storageAccounts/jobsaiuksouth17" ]]
+          shared_key=$(az storage account show -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" --query allowSharedKeyAccess -o tsv)
+          if [[ "$shared_key" == false || "$shared_key" == "False" ]]; then
+            az storage account update -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" --allow-shared-key-access true -o none
+          fi
+          account_key=$(az storage account keys list -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" --query '[0].value' -o tsv)
+          az storage container create --account-name "$STORAGE_NAME" --account-key "$account_key" --name jobsai-resumes --public-access off -o none
+          unset account_key
+          az storage account update -g "$RESOURCE_GROUP" -n "$STORAGE_NAME" --allow-shared-key-access false -o none
+          principal_id=$(az identity show -g "$RESOURCE_GROUP" -n "$IDENTITY_NAME" --query principalId -o tsv)
+          existing=$(az role assignment list --scope "$storage_id" --assignee-object-id "$principal_id" --query "[?roleDefinitionName=='Storage Blob Data Contributor'].id | [0]" -o tsv)
+          if [[ -z "$existing" ]]; then
+            az role assignment create --scope "$storage_id" --role 'Storage Blob Data Contributor' --assignee-object-id "$principal_id" --assignee-principal-type ServicePrincipal -o none
+          fi
+      - name: Create and configure UK South dashboard
+        run: |
+          set -euo pipefail
+          if ! az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" -o none 2>/dev/null; then
+            az webapp create -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" -p "$PLAN_NAME" --runtime 'PYTHON:3.12' -o none
+          fi
+          app_id=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query id -o tsv)
+          [[ "$app_id" == *"/resourceGroups/jobsai-uksouth-rg/providers/Microsoft.Web/sites/jobsai-uksouth-jyothibr17" ]]
+          plan_id=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query serverFarmId -o tsv)
+          expected=$(az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --query id -o tsv)
+          [[ "${plan_id,,}" == "${expected,,}" ]] || { echo "::error::Unexpected App Service plan reference"; exit 1; }
+          app_location=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query location -o tsv)
+          [[ "${app_location,,}" == "uk south" || "${app_location,,}" == "uksouth" ]]
+          identity_id=$(az identity show -g "$RESOURCE_GROUP" -n "$IDENTITY_NAME" --query id -o tsv)
+          identity_client=$(az identity show -g "$RESOURCE_GROUP" -n "$IDENTITY_NAME" --query clientId -o tsv)
+          az webapp identity assign -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --identities "$identity_id" -o none
+          export TF_VARS
+          client=$(python -c 'import os,json;print(json.loads(os.environ["TF_VARS"])["entra_client_id"])')
+          owner=$(python -c 'import os,json;print(json.loads(os.environ["TF_VARS"])["entra_owner_oid"])')
+          boards=$(python -c 'import os,json,pathlib;v=json.loads(os.environ["TF_VARS"]).get("job_boards_json","[]");print(v if json.loads(v) else json.dumps(json.loads(pathlib.Path("config/public-boards.json").read_text())))')
+          az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" -o none --settings             APP_ENV=production APP_DB_ENGINE=sqlite LOCAL_DB=/home/jobsai.sqlite3             ENABLE_SCHEDULER=true WEBSITES_ENABLE_APP_SERVICE_STORAGE=true             SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true             ENTRA_TENANT=d69bf108-84a8-4b7f-b72a-73d0181ae024             "ENTRA_CLIENT_ID=$client" "ENTRA_AUDIENCE=$client"             "ENTRA_SCOPE=api://$client/access_as_user" "ENTRA_OWNER_OID=$owner"             "AZURE_CLIENT_ID=$identity_client"             "BLOB_ACCOUNT_URL=https://$STORAGE_NAME.blob.core.windows.net/"             BLOB_CONTAINER=jobsai-resumes "JOB_BOARDS_JSON=$boards"
+          if [[ "$SERVICE_SKU" == 'F1' ]]; then
+            az webapp config set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --always-on false --startup-file 'python -m uvicorn app.api:app --host 0.0.0.0 --port 8000' -o none
+          else
+            az webapp config set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --always-on true --startup-file 'python -m uvicorn app.api:app --host 0.0.0.0 --port 8000' -o none
+          fi
+          az webapp update -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --https-only true -o none
+      - name: Deploy and verify running UK South application
+        run: |
+          set -euo pipefail
+          az webapp deploy -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --src-path jobhunter.zip --type zip --timeout 1200 -o none
+          hostname=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query defaultHostName -o tsv)
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 10 "https://$hostname/health"
+          curl --fail --silent --show-error "https://$hostname/api/config" | python -c 'import json,sys;assert json.load(sys.stdin)["production"] is True'
+          echo '## Job Hunter UK South live deployment' >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: https://$hostname" >> "$GITHUB_STEP_SUMMARY"
+          echo "Region: UK South; resource group: $RESOURCE_GROUP; SKU: $SERVICE_SKU" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Isolated storage, managed identity, dashboard, discovery worker and persistent pilot SQLite. No AegisSOC references or other-region deployment.' >> "$GITHUB_STEP_SUMMARY"
