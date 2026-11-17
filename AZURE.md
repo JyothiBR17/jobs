@@ -65,3 +65,7 @@ The supplied pull_request subject applies to pull request workflows without an e
 All configurable Azure resource names start with jobsai. Azure-required service names, workload profile type Consumption, role-definition names, and generated role-assignment GUIDs retain their platform-defined forms. The PostgreSQL DNS zone uses jobsai.postgres.database.azure.com. The database name defaults to `jobsaidb`.
 
 The application workflow builds a source-only GHCR image on main changes and deploys both web and scheduled worker on manual dispatch after the production environment gate. Configure GHCR package visibility as public for the public-image deployment model, or configure registry authentication before using a private image. Deploy initial infrastructure first and set its image to the published digest. Application updates change Azure image references directly. Update Terraform image input to that same digest before the next infrastructure apply.
+
+## Selected Terraform state backend
+
+The deployment pipeline uses infra/backend.hcl. State is stored in jobsai-production.tfstate in the existing jobs container of stgaccpocsoc in socpocmi-rg. Backend storage remains managed outside this application stack. The deployment identity principal 0a34ff40-76b9-4459-b5d2-6fde206db4ff needs Storage Blob Data Contributor at that container scope. Storage networking must permit the selected GitHub runner to access the Blob endpoint. Container access and a backend initialisation have yet to be verified against Azure.

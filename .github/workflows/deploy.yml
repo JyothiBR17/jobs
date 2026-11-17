@@ -37,14 +37,11 @@ jobs:
           TF_VAR_prefix: jobsai
           TF_VAR_subscription_id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
           TF_INPUT: "0"
-          TF_BACKEND: ${{ vars.TERRAFORM_BACKEND_HCL }}
           TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
         run: |
           test -n "$TF_VARS"
           printf '%s' "$TF_VARS" > infra/ci.auto.tfvars.json
-          test -n "$TF_BACKEND"
-          printf '%s' "$TF_BACKEND" > infra/ci.backend.hcl
-          terraform -chdir=infra init -backend-config=ci.backend.hcl
+          terraform -chdir=infra init -backend-config=backend.hcl
           terraform -chdir=infra plan
   apply:
     needs: plan
@@ -64,7 +61,6 @@ jobs:
       - name: Apply and verify
         env:
           TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
-          TF_BACKEND: ${{ vars.TERRAFORM_BACKEND_HCL }}
           TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
           ARM_USE_OIDC: "true"
           ARM_USE_AZUREAD: "true"
@@ -77,9 +73,7 @@ jobs:
         run: |
           test -n "$TF_VARS"
           printf '%s' "$TF_VARS" > infra/ci.auto.tfvars.json
-          test -n "$TF_BACKEND"
-          printf '%s' "$TF_BACKEND" > infra/ci.backend.hcl
-          terraform -chdir=infra init -backend-config=ci.backend.hcl
+          terraform -chdir=infra init -backend-config=backend.hcl
           terraform -chdir=infra plan -out=release.tfplan
           terraform -chdir=infra apply release.tfplan
           endpoint=$(terraform -chdir=infra output -raw web_url 2>/dev/null || true)
