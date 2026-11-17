@@ -93,7 +93,9 @@ jobs:
           done
           az storage container create --account-name "$ACCOUNT" --account-key "$key" --name jobsai-resumes --public-access off -o none
           printf ':80 {\n  respond "Preparing HTTPS" 503\n}\n' > /tmp/Caddyfile
-          az storage file upload --account-name "$ACCOUNT" --account-key "$key" --share-name jobsai-caddy-conf --source /tmp/Caddyfile --path Caddyfile -o none
+          share_exists=$(az storage share exists --account-name "$ACCOUNT" --account-key "$key" --name jobsai-caddy-conf --query exists -o tsv)
+          [[ "$share_exists" == true || "$share_exists" == True ]] || { echo "::error::The UK South Caddy configuration share was not created"; exit 1; }
+          az storage file upload --account-name "$ACCOUNT" --account-key "$key" --share-name jobsai-caddy-conf --source /tmp/Caddyfile --no-progress -o none
           identity_id=$(az identity show -g "$RG" -n "$IDENTITY" --query id -o tsv)
           principal=$(az identity show -g "$RG" -n "$IDENTITY" --query principalId -o tsv)
           registry_id=$(az acr show -g "$RG" -n "$REGISTRY" --query id -o tsv)
@@ -181,7 +183,7 @@ jobs:
           [[ "$fqdn" == *.uksouth.azurecontainer.io ]] || { echo "::error::Unexpected Container Instances domain"; exit 1; }
           printf '%s {\n  reverse_proxy http://localhost:8000\n}\n' "$fqdn" > /tmp/Caddyfile
           key=$(az storage account keys list -g "$RG" -n "$ACCOUNT" --query '[0].value' -o tsv)
-          az storage file upload --account-name "$ACCOUNT" --account-key "$key" --share-name jobsai-caddy-conf --source /tmp/Caddyfile --path Caddyfile --overwrite true -o none
+          az storage file upload --account-name "$ACCOUNT" --account-key "$key" --share-name jobsai-caddy-conf --source /tmp/Caddyfile --no-progress -o none
           unset key
           az container restart -g "$RG" -n "$GROUP" -o none
           curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 10 "https://$fqdn/health"
