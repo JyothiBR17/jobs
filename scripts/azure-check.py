@@ -44,3 +44,28 @@ query("jobsai network", [
     "network", "vnet", "list", "--resource-group", "jobsai-rg",
     "--query", "[].{name:name,location:location,subnets:subnets[].{name:name,prefix:addressPrefix}}",
 ])
+
+# Collect the exact, region-specific PostgreSQL SKU capabilities; edition labels
+# alone are insufficient to predict whether Azure accepts B_Standard_B1ms.
+result = subprocess.run(
+    ["az", "postgres", "flexible-server", "list-skus", "--location", "centralus",
+     "--output", "json"],
+    capture_output=True, text=True,
+)
+print("--- Central US PostgreSQL SKU detailed capabilities ---", flush=True)
+if result.returncode:
+    print(f"SKU metadata command failed with exit code {result.returncode}", flush=True)
+else:
+    capabilities = json.loads(result.stdout)
+    print(json.dumps(capabilities, indent=2)[:25000], flush=True)
+
+query("Existing Container Apps environment details", [
+    "containerapp", "env", "show", "--resource-group", "rg-aegissoc-app-dev",
+    "--name", "cae-aegissoc-dev",
+    "--query", "{id:id,name:name,location:location,subnet:properties.vnetConfiguration.infrastructureSubnetId,workloadProfiles:properties.workloadProfiles,provisioningState:properties.provisioningState}",
+])
+query("Failed or partially created PostgreSQL server", [
+    "postgres", "flexible-server", "show", "--resource-group", "jobsai-rg",
+    "--name", "jobsai-pg", "--query",
+    "{name:name,location:location,sku:sku.name,state:state,publicAccess:network.publicNetworkAccess,version:version}",
+])
