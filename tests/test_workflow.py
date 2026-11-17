@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from threading import Event
 from pathlib import Path
 from unittest.mock import patch
 
@@ -66,6 +67,18 @@ class Workflow(unittest.TestCase):
                 )
         with database(write=True) as db:
             self.id = ingest(db, POSTING)
+
+    def test_discovery_button_runs_authenticated_worker(self):
+        completed = Event()
+        with patch("app.worker.main", side_effect=lambda: completed.set()):
+            result = self.client.post("/api/discovery/run")
+            self.assertEqual(202, result.status_code)
+            self.assertTrue(completed.wait(5), "Discovery worker was not triggered")
+        status = self.client.get("/api/discovery/status")
+        self.assertEqual(200, status.status_code)
+        self.assertIn(status.json()["status"], ("running", "completed"))
+        unauthenticated = self.client.get("/api/discovery/status", headers={"Authorization": ""})
+        self.assertEqual(401, unauthenticated.status_code)
 
     def test_no_key_job_match_uses_literal_facts(self):
         profile = Profile.model_validate(PROFILE)
