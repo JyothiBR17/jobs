@@ -15,10 +15,7 @@ def query(label, arguments):
     return value
 
 
-query("Container Apps environments", [
-    "containerapp", "env", "list", "--query",
-    "[].{name:name,resourceGroup:resourceGroup,location:location,subnet:properties.vnetConfiguration.infrastructureSubnetId,provisioningState:properties.provisioningState}",
-])
+# Inspect only Job Hunter resources. Never enumerate or inspect AegisSOC resources.
 for region in ("eastus", "eastus2", "centralus"):
     query(f"PostgreSQL capabilities in {region}", [
         "postgres", "flexible-server", "list-skus", "--location", region,
@@ -59,11 +56,6 @@ else:
     capabilities = json.loads(result.stdout)
     print(json.dumps(capabilities, indent=2)[:25000], flush=True)
 
-query("Existing Container Apps environment details", [
-    "containerapp", "env", "show", "--resource-group", "rg-aegissoc-app-dev",
-    "--name", "cae-aegissoc-dev",
-    "--query", "{id:id,name:name,location:location,subnet:properties.vnetConfiguration.infrastructureSubnetId,workloadProfiles:properties.workloadProfiles,provisioningState:properties.provisioningState}",
-])
 query("Failed or partially created PostgreSQL server", [
     "postgres", "flexible-server", "show", "--resource-group", "jobsai-rg",
     "--name", "jobsai-pg", "--query",
