@@ -1,0 +1,112 @@
+name: jobsai isolated App Service deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/job-hunter-appservice.yml
+      - app/**
+      - migrations/**
+      - web/**
+      - requirements.txt
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: jobsai-appservice-only
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      RESOURCE_GROUP: jobsai-rg
+      PLAN_NAME: jobsai-hunter-plan
+      WEBAPP_NAME: jobsai-hunter-jyothibr17
+      TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build React web assets
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Package isolated API and dashboard
+        run: zip -q -r jobhunter.zip app migrations requirements.txt -x '*/__pycache__/*'
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Verify Job Hunter resource boundary
+        run: |
+          set -euo pipefail
+          [[ "$RESOURCE_GROUP" == "jobsai-rg" && "$PLAN_NAME" == jobsai-* && "$WEBAPP_NAME" == jobsai-* ]]
+          az group show --name "$RESOURCE_GROUP" --output none
+          if [[ -z "$TF_VARS" ]]; then
+            echo "::error::TERRAFORM_INPUTS_JSON is missing"; exit 1
+          fi
+          python - <<'PY'
+          import json, os
+          values = json.loads(os.environ["TF_VARS"])
+          assert values.get("prefix", "jobsai") == "jobsai"
+          for key in ("entra_client_id", "entra_owner_oid"):
+              v = values.get(key)
+              assert isinstance(v, str) and len(v) == 36 and v != "00000000-0000-0000-0000-000000000000", key
+          print("Verified isolated jobsai deployment configuration")
+          PY
+      - name: Provision dedicated App Service (never access AegisSOC)
+        run: |
+          set -euo pipefail
+          az provider register --namespace Microsoft.Web --wait --output none
+          if ! az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --output none 2>/dev/null; then
+            az appservice plan create -g "$RESOURCE_GROUP" -n "$PLAN_NAME" -l centralus --is-linux --sku B1 --number-of-workers 1 --output none
+          fi
+          if ! az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --output none 2>/dev/null; then
+            az webapp create -g "$RESOURCE_GROUP" -p "$PLAN_NAME" -n "$WEBAPP_NAME" --runtime "PYTHON:3.12" --output none
+          fi
+          plan_id=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query serverFarmId -o tsv)
+          expected_plan_id=$(az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --query id -o tsv)
+          [[ "${plan_id,,}" == "${expected_plan_id,,}" ]] || { echo "::error::App Service belongs to an unexpected plan"; exit 1; }
+          location=$(az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --query location -o tsv)
+          [[ "${location,,}" == "centralus" || "${location,,}" == "central us" ]] || { echo "::error::App Service plan region mismatch"; exit 1; }
+      - name: Configure secure single-instance pilot
+        run: |
+          set -euo pipefail
+          export RESOURCE_GROUP WEBAPP_NAME TF_VARS
+          client=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"])["entra_client_id"])')
+          owner=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"])["entra_owner_oid"])')
+          boards=$(python -c 'import json,os;print(json.loads(os.environ["TF_VARS"]).get("job_boards_json", "[]"))')
+          identity_id=$(az identity show -g "$RESOURCE_GROUP" -n jobsai-runtime --query id -o tsv)
+          identity_client=$(az identity show -g "$RESOURCE_GROUP" -n jobsai-runtime --query clientId -o tsv)
+          blob=$(az storage account show -g "$RESOURCE_GROUP" -n jobsaidocs --query primaryEndpoints.blob -o tsv)
+          [[ -n "$identity_id" && -n "$identity_client" && "$blob" == https://jobsaidocs.blob.core.windows.net/ ]]
+          az webapp identity assign -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --identities "$identity_id" --output none
+          az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --output none --settings \
+            APP_ENV=production APP_DB_ENGINE=sqlite LOCAL_DB=/home/jobsai.sqlite3 \
+            ENABLE_SCHEDULER=true WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true \
+            ENTRA_TENANT=d69bf108-84a8-4b7f-b72a-73d0181ae024 \
+            "ENTRA_CLIENT_ID=$client" "ENTRA_AUDIENCE=$client" \
+            "ENTRA_SCOPE=api://$client/access_as_user" "ENTRA_OWNER_OID=$owner" \
+            "AZURE_CLIENT_ID=$identity_client" "BLOB_ACCOUNT_URL=$blob" BLOB_CONTAINER=jobsai-resumes \
+            "JOB_BOARDS_JSON=$boards"
+          az webapp config set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --always-on true \
+            --number-of-workers 1 --startup-file 'python -m uvicorn app.api:app --host 0.0.0.0 --port 8000' --output none
+          az webapp update -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --https-only true --output none
+      - name: Deploy and verify application
+        run: |
+          set -euo pipefail
+          az webapp deploy -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --src-path jobhunter.zip --type zip --timeout 1200 --output none
+          hostname=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query defaultHostName -o tsv)
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 10 "https://$hostname/health"
+          echo "## Job Hunter deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dedicated Central US App Service: https://$hostname" >> "$GITHUB_STEP_SUMMARY"
+          echo "Single process, persistent /home SQLite, isolated jobsai resources, existing jobsai Blob, scheduled worker." >> "$GITHUB_STEP_SUMMARY"
+          echo "No AegisSOC resource is referenced or changed by this workflow." >> "$GITHUB_STEP_SUMMARY"
