@@ -27,6 +27,7 @@ function App() {
   const [stored, setStored] = useState(false);
   const [events, setEvents] = useState([]);
   const [usage, setUsage] = useState({});
+  const [discovery, setDiscovery] = useState({status:'idle'});
   const [search, setSearch] = useState('');
   const [country, setCountry] = useState('');
   const [filter, setFilter] = useState('');
@@ -49,8 +50,8 @@ function App() {
   }
 
   async function reload() {
-    const [j,d,t,a,p,u] = await Promise.all(['/jobs','/drafts','/tracking','/audit','/profile','/usage'].map(path => api(path)));
-    setJobs(j); setDrafts(d); setTracking(t); setEvents(a); setUsage(u);
+    const [j,d,t,a,p,u,s] = await Promise.all(['/jobs','/drafts','/tracking','/audit','/profile','/usage','/discovery/status'].map(path => api(path)));
+    setJobs(j); setDrafts(d); setTracking(t); setEvents(a); setUsage(u); setDiscovery(s);
     setProfile(JSON.stringify(p.profile || {name:'',summary:'',notice_days:90,facts:[],source_verified:false},null,2));
     setStored(p.resume_stored); setSelection([]); setReady(true);
   }
@@ -118,7 +119,12 @@ function App() {
     {['Overview','Analytics'].includes(page) && <><div className="metrics">{stats.map(([label,value])=><article key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
       {page==='Analytics' && <section><h2>Model usage · {usage.month}</h2><p>{usage.requests} / {usage.request_limit} requests · {usage.input_tokens} input tokens · {usage.output_tokens} output tokens</p></section>}
       {page==='Overview' && <><h2>Recent discoveries</h2>{jobTable(jobs.slice(0,6))}</>}</>}
-    {['Job Discovery','Recommended Jobs','Sponsorship Verification'].includes(page) && <><div className="toolbar">
+    {['Job Discovery','Recommended Jobs','Sponsorship Verification'].includes(page) && <>{page==='Job Discovery' &&
+      <div className="toolbar">
+        <button disabled={discovery.status==='running'} onClick={()=>action(()=>api('/discovery/run','POST'),'Discovery started. Use Refresh to see newly discovered vacancies.')}>Discover jobs now</button>
+        <span role="status">Discovery: {discovery.status}{discovery.started ? ' · started '+format(discovery.started) : ''}</span>
+        {discovery.error && <span role="alert">Last run: {discovery.error}</span>}
+      </div>}<div className="toolbar">
       <input aria-label="Search roles and employers" placeholder="Search roles or employers" value={search} onChange={e=>setSearch(e.target.value)}/>
       <select aria-label="Country" value={country} onChange={e=>setCountry(e.target.value)}><option value="">All countries</option>{[...new Set(jobs.map(j=>j.country))].sort().map(c=><option key={c}>{c}</option>)}</select>
       <select aria-label="Sponsorship" value={filter} onChange={e=>setFilter(e.target.value)}><option value="">All sponsorship statuses</option>{Object.entries(statuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>
