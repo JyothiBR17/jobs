@@ -66,7 +66,7 @@ jobs:
           set -euo pipefail
           az provider register --namespace Microsoft.Web --wait --output none
           if ! az appservice plan show -g "$RESOURCE_GROUP" -n "$PLAN_NAME" --output none 2>/dev/null; then
-            az appservice plan create -g "$RESOURCE_GROUP" -n "$PLAN_NAME" -l centralus --is-linux --sku B1 --number-of-workers 1 --output none
+            az appservice plan create -g "$RESOURCE_GROUP" -n "$PLAN_NAME" -l centralus --is-linux --sku F1 --output none
           fi
           if ! az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --output none 2>/dev/null; then
             az webapp create -g "$RESOURCE_GROUP" -p "$PLAN_NAME" -n "$WEBAPP_NAME" --runtime "PYTHON:3.12" --output none
@@ -97,7 +97,7 @@ jobs:
             "ENTRA_SCOPE=api://$client/access_as_user" "ENTRA_OWNER_OID=$owner" \
             "AZURE_CLIENT_ID=$identity_client" "BLOB_ACCOUNT_URL=$blob" BLOB_CONTAINER=jobsai-resumes \
             "JOB_BOARDS_JSON=$boards"
-          az webapp config set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --always-on true \
+          az webapp config set -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --always-on false \
             --number-of-workers 1 --startup-file 'python -m uvicorn app.api:app --host 0.0.0.0 --port 8000' --output none
           az webapp update -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --https-only true --output none
       - name: Deploy and verify application
@@ -107,6 +107,6 @@ jobs:
           hostname=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEBAPP_NAME" --query defaultHostName -o tsv)
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 10 "https://$hostname/health"
           echo "## Job Hunter deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "Dedicated Central US App Service: https://$hostname" >> "$GITHUB_STEP_SUMMARY"
-          echo "Single process, persistent /home SQLite, isolated jobsai resources, existing jobsai Blob, scheduled worker." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dedicated Central US F1 pilot App Service: https://$hostname" >> "$GITHUB_STEP_SUMMARY"
+          echo "Single process, persistent /home SQLite, isolated jobsai resources, existing jobsai Blob. F1 does not support Always On; scheduled worker is best-effort while site is running." >> "$GITHUB_STEP_SUMMARY"
           echo "No AegisSOC resource is referenced or changed by this workflow." >> "$GITHUB_STEP_SUMMARY"
