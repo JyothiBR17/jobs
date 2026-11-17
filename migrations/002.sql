@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS model_usage (
+ month TEXT PRIMARY KEY,
+ requests INTEGER NOT NULL DEFAULT 0,
+ input_tokens INTEGER NOT NULL DEFAULT 0,
+ output_tokens INTEGER NOT NULL DEFAULT 0
+);

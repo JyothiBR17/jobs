@@ -1,0 +1,74 @@
+name: Azure deployment
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply after production environment approval
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: jobhunter-production
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: production-plan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.5"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Plan
+        env:
+          TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
+          TF_INPUT: "0"
+          TF_BACKEND: ${{ vars.TERRAFORM_BACKEND_HCL }}
+          TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+        run: |
+          test -n "$TF_VARS"
+          printf '%s' "$TF_VARS" > infra/ci.auto.tfvars.json
+          test -n "$TF_BACKEND"
+          printf '%s' "$TF_BACKEND" > infra/ci.backend.hcl
+          terraform -chdir=infra init -backend-config=ci.backend.hcl
+          terraform -chdir=infra plan
+  apply:
+    needs: plan
+    if: inputs.apply
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.5"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply and verify
+        env:
+          TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
+          TF_BACKEND: ${{ vars.TERRAFORM_BACKEND_HCL }}
+          TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+          TF_INPUT: "0"
+        run: |
+          test -n "$TF_VARS"
+          printf '%s' "$TF_VARS" > infra/ci.auto.tfvars.json
+          test -n "$TF_BACKEND"
+          printf '%s' "$TF_BACKEND" > infra/ci.backend.hcl
+          terraform -chdir=infra init -backend-config=ci.backend.hcl
+          terraform -chdir=infra plan -out=release.tfplan
+          terraform -chdir=infra apply release.tfplan
+          endpoint=$(terraform -chdir=infra output -raw web_url 2>/dev/null || true)
+          if [ -n "$endpoint" ]; then
+            curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 10 "$endpoint/health"
+          fi

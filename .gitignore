@@ -1,0 +1,12 @@
+.env
+*.db
+*.db-*
+private/
+.venv/
+__pycache__/
+node_modules/
+app/static/
+.terraform/
+*.tfstate*
+*.tfplan
+*.auto.tfvars
