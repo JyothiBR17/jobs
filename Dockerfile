@@ -8,7 +8,10 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /srv
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && useradd --system --uid 10001 jobhunter
+RUN pip install --no-cache-dir -r requirements.txt \
+    && useradd --system --uid 10001 jobhunter \
+    && mkdir -p /srv/data \
+    && chown -R 10001:10001 /srv/data
 COPY app app
 COPY migrations migrations
 COPY --from=web /project/app/static app/static
