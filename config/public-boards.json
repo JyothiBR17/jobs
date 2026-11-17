@@ -1,0 +1,6 @@
+[
+  {"provider": "greenhouse", "slug": "grafanalabs", "employer": "Grafana Labs"},
+  {"provider": "greenhouse", "slug": "cloudflare", "employer": "Cloudflare"},
+  {"provider": "greenhouse", "slug": "datadog", "employer": "Datadog"},
+  {"provider": "lever", "slug": "palantir", "employer": "Palantir"}
+]
