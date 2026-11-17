@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+from threading import Event, Thread
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,10 +19,31 @@ from .files import store_resume
 from .notifications import enqueue
 
 
+def _scheduled_worker(stop: Event):
+    """Single-process pilot scheduler. Never deploy more than one web worker."""
+    if stop.wait(15):
+        return
+    while not stop.is_set():
+        try:
+            from .worker import main as run_pipeline
+
+            run_pipeline()
+        except Exception:
+            logging.exception("Job Hunter scheduled discovery cycle failed")
+        if stop.wait(30 * 60):
+            break
+
+
 @asynccontextmanager
 async def lifespan(app):
     migrate()
-    yield
+    stop = Event()
+    if os.getenv("ENABLE_SCHEDULER") == "true":
+        Thread(target=_scheduled_worker, args=(stop,), daemon=True, name="jobhunter-scheduler").start()
+    try:
+        yield
+    finally:
+        stop.set()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
