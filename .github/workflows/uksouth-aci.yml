@@ -71,7 +71,7 @@ jobs:
             sleep 15
           done
           [[ "$logged_in" == true ]] || { echo "::error::Entra registry push permission unavailable"; exit 1; }
-          docker build -t "$REGISTRY.azurecr.io/jobhunter:$GITHUB_SHA" .
+          docker build -f Dockerfile.aci -t "$REGISTRY.azurecr.io/jobhunter:$GITHUB_SHA" .
           docker push "$REGISTRY.azurecr.io/jobhunter:$GITHUB_SHA"
       - name: Prepare dedicated UK South identity and encrypted storage
         run: |
@@ -151,7 +151,6 @@ jobs:
                   "image":image, "ports":[{"port":8000,"protocol":"TCP"}],
                   "environmentVariables":env,
                   "resources":{"requests":{"cpu":0.5,"memoryInGB":1.0}},
-                  "securityContext":{"runAsUser":0},
                   "volumeMounts":[mount("database","/home")]
                 }},
                 {"name":"caddy","properties":{
