@@ -54,7 +54,25 @@ jobs:
           fi
           location=$(az acr show -g "$RG" -n "$REGISTRY" --query location -o tsv)
           [[ "${location,,}" == uksouth ]] || { echo "::error::Registry location mismatch"; exit 1; }
-          az acr build -r "$REGISTRY" --image "jobhunter:$GITHUB_SHA" --file Dockerfile . --no-logs -o none
+          # ACR Tasks are disallowed on this free subscription. Build with the
+          # GitHub-hosted Docker daemon and push through Entra RBAC instead.
+          registry_id=$(az acr show -g "$RG" -n "$REGISTRY" --query id -o tsv)
+          deploy_principal=0a34ff40-76b9-4459-b5d2-6fde206db4ff
+          existing=$(az role assignment list --scope "$registry_id" --assignee-object-id "$deploy_principal" --query "[?roleDefinitionName=='AcrPush'].id | [0]" -o tsv)
+          if [[ -z "$existing" ]]; then
+            az role assignment create --scope "$registry_id" --role AcrPush --assignee-object-id "$deploy_principal" --assignee-principal-type ServicePrincipal -o none
+          fi
+          logged_in=false
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if az acr login --name "$REGISTRY" -o none; then
+              logged_in=true
+              break
+            fi
+            sleep 15
+          done
+          [[ "$logged_in" == true ]] || { echo "::error::Entra registry push permission unavailable"; exit 1; }
+          docker build -t "$REGISTRY.azurecr.io/jobhunter:$GITHUB_SHA" .
+          docker push "$REGISTRY.azurecr.io/jobhunter:$GITHUB_SHA"
       - name: Prepare dedicated UK South identity and encrypted storage
         run: |
           set -euo pipefail
