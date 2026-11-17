@@ -1,0 +1,174 @@
+name: Job Hunter UK South HTTPS container deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/uksouth-aci.yml
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: jobsai-uksouth-aci
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      RG: jobsai-uksouth-rg
+      LOC: uksouth
+      ACCOUNT: jobsaiuksouth17
+      REGISTRY: jobsaiuk17acr
+      IDENTITY: jobsai-uksouth-runtime
+      GROUP: jobsai-uksouth-app
+      TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Guard the UK South Job Hunter boundary
+        run: |
+          set -euo pipefail
+          [[ "$RG" == jobsai-uksouth-rg && "$LOC" == uksouth ]]
+          [[ "$ACCOUNT" == jobsaiuksouth17 && "$REGISTRY" == jobsaiuk17acr ]]
+          [[ "$IDENTITY" == jobsai-uksouth-runtime && "$GROUP" == jobsai-uksouth-app ]]
+          [[ "$(az account show --query id -o tsv)" == ed8f4826-ca81-4919-a8e9-79d5b2781b98 ]]
+          python - <<'PY'
+          import json, os, re
+          cfg = json.loads(os.environ["TF_VARS"])
+          for k in ("entra_client_id", "entra_owner_oid"):
+              if not re.fullmatch("[0-9a-fA-F-]{36}", cfg.get(k, "")):
+                  raise SystemExit("Missing Job Hunter credential metadata: " + k)
+          PY
+          az group show -n "$RG" --query location -o tsv | grep -Fx uksouth
+      - name: Create dedicated UK South registry and image
+        run: |
+          set -euo pipefail
+          if ! az acr show -g "$RG" -n "$REGISTRY" -o none 2>/dev/null; then
+            az acr create -g "$RG" -n "$REGISTRY" -l "$LOC" --sku Basic --admin-enabled false -o none
+          fi
+          location=$(az acr show -g "$RG" -n "$REGISTRY" --query location -o tsv)
+          [[ "${location,,}" == uksouth ]] || { echo "::error::Registry location mismatch"; exit 1; }
+          az acr build -r "$REGISTRY" --image "jobhunter:$GITHUB_SHA" --file Dockerfile . --no-logs -o none
+      - name: Prepare dedicated UK South identity and encrypted storage
+        run: |
+          set -euo pipefail
+          if ! az identity show -g "$RG" -n "$IDENTITY" -o none 2>/dev/null; then
+            az identity create -g "$RG" -n "$IDENTITY" -l "$LOC" -o none
+          fi
+          if ! az storage account show -g "$RG" -n "$ACCOUNT" -o none 2>/dev/null; then
+            az storage account create -g "$RG" -n "$ACCOUNT" -l "$LOC" --kind StorageV2 --sku Standard_LRS --min-tls-version TLS1_2 --allow-blob-public-access false --allow-shared-key-access true -o none
+          fi
+          actual=$(az storage account show -g "$RG" -n "$ACCOUNT" --query location -o tsv)
+          [[ "${actual,,}" == uksouth ]]
+          shared=$(az storage account show -g "$RG" -n "$ACCOUNT" --query allowSharedKeyAccess -o tsv)
+          [[ "$shared" != false && "$shared" != False ]] || { echo "::error::Azure Files requires Shared Key for the private file mount"; exit 1; }
+          key=$(az storage account keys list -g "$RG" -n "$ACCOUNT" --query '[0].value' -o tsv)
+          [[ -n "$key" ]]
+          for share in jobsai-db jobsai-caddy-conf jobsai-caddy-data; do
+            az storage share create --account-name "$ACCOUNT" --account-key "$key" --name "$share" --quota 5 -o none
+          done
+          az storage container create --account-name "$ACCOUNT" --account-key "$key" --name jobsai-resumes --public-access off -o none
+          printf ':80 {\n  respond "Preparing HTTPS" 503\n}\n' > /tmp/Caddyfile
+          az storage file upload --account-name "$ACCOUNT" --account-key "$key" --share-name jobsai-caddy-conf --source /tmp/Caddyfile --path Caddyfile -o none
+          identity_id=$(az identity show -g "$RG" -n "$IDENTITY" --query id -o tsv)
+          principal=$(az identity show -g "$RG" -n "$IDENTITY" --query principalId -o tsv)
+          registry_id=$(az acr show -g "$RG" -n "$REGISTRY" --query id -o tsv)
+          storage_id=$(az storage account show -g "$RG" -n "$ACCOUNT" --query id -o tsv)
+          for entry in "$registry_id|AcrPull" "$storage_id|Storage Blob Data Contributor"; do
+            scope=${entry%%|*}
+            role=${entry#*|}
+            if [[ -z "$(az role assignment list --scope "$scope" --assignee-object-id "$principal" --query "[?roleDefinitionName=='$role'].id | [0]" -o tsv)" ]]; then
+              az role assignment create --scope "$scope" --role "$role" --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal -o none
+            fi
+          done
+      - name: Create private app and HTTPS sidecar on Azure Container Instances
+        run: |
+          set -euo pipefail
+          key=$(az storage account keys list -g "$RG" -n "$ACCOUNT" --query '[0].value' -o tsv)
+          identity_id=$(az identity show -g "$RG" -n "$IDENTITY" --query id -o tsv)
+          identity_client=$(az identity show -g "$RG" -n "$IDENTITY" --query clientId -o tsv)
+          export key identity_id identity_client
+          python - <<'PY'
+          import json, os
+          c=json.loads(os.environ["TF_VARS"])
+          ac=os.environ["ACCOUNT"]
+          identity=os.environ["identity_id"]
+          image=f'{os.environ["REGISTRY"]}.azurecr.io/jobhunter:{os.environ["GITHUB_SHA"]}'
+          boards=c.get("job_boards_json", "[]")
+          if not json.loads(boards):
+              boards=open("config/public-boards.json").read()
+          values={
+              "APP_ENV":"production", "APP_DB_ENGINE":"sqlite",
+              "LOCAL_DB":"/home/jobsai.sqlite3", "ENABLE_SCHEDULER":"true",
+              "ENTRA_TENANT":"d69bf108-84a8-4b7f-b72a-73d0181ae024",
+              "ENTRA_CLIENT_ID":c["entra_client_id"],
+              "ENTRA_AUDIENCE":c["entra_client_id"],
+              "ENTRA_SCOPE":f'api://{c["entra_client_id"]}/access_as_user',
+              "ENTRA_OWNER_OID":c["entra_owner_oid"],
+              "AZURE_CLIENT_ID":os.environ["identity_client"],
+              "BLOB_ACCOUNT_URL":f"https://{ac}.blob.core.windows.net/",
+              "BLOB_CONTAINER":"jobsai-resumes",
+              "JOB_BOARDS_JSON":boards
+          }
+          env=[{"name":k, "value":v} for k,v in values.items()]
+          def volume(name, share):
+              return {"name":name,"azureFile":{"shareName":share,"storageAccountName":ac,"storageAccountKey":os.environ["key"]}}
+          def mount(name,path):
+              return {"name":name,"mountPath":path}
+          group={
+            "name":os.environ["GROUP"], "apiVersion":"2021-10-01",
+            "location":"uksouth",
+            "identity":{"type":"UserAssigned","userAssignedIdentities":{identity:{}}},
+            "properties":{
+              "containers":[
+                {"name":"app","properties":{
+                  "image":image, "ports":[{"port":8000,"protocol":"TCP"}],
+                  "environmentVariables":env,
+                  "resources":{"requests":{"cpu":0.5,"memoryInGB":1.0}},
+                  "securityContext":{"runAsUser":0},
+                  "volumeMounts":[mount("database","/home")]
+                }},
+                {"name":"caddy","properties":{
+                  "image":"caddy:2", "ports":[{"port":80,"protocol":"TCP"},{"port":443,"protocol":"TCP"}],
+                  "resources":{"requests":{"cpu":0.5,"memoryInGB":0.5}},
+                  "volumeMounts":[mount("caddyconf","/etc/caddy"),mount("caddydata","/data")]
+                }}
+              ],
+              "imageRegistryCredentials":[{"server":f'{os.environ["REGISTRY"]}.azurecr.io',"identity":identity}],
+              "ipAddress":{
+                "type":"Public","dnsNameLabel":"jobsai-uksouth-jyothibr17",
+                "ports":[{"protocol":"TCP","port":80},{"protocol":"TCP","port":443}]
+              },
+              "restartPolicy":"Always","osType":"Linux",
+              "volumes":[volume("database","jobsai-db"),volume("caddyconf","jobsai-caddy-conf"),volume("caddydata","jobsai-caddy-data")]
+            }
+          }
+          open("/tmp/jobsai-uksouth-aci.json","w").write(json.dumps(group))
+          PY
+          if az container show -g "$RG" -n "$GROUP" -o none 2>/dev/null; then
+            live_location=$(az container show -g "$RG" -n "$GROUP" --query location -o tsv)
+            [[ "${live_location,,}" == uksouth ]] || { echo "::error::Existing container group is outside UK South"; exit 1; }
+          fi
+          az container create -g "$RG" --file /tmp/jobsai-uksouth-aci.json -o none
+      - name: Issue automatic TLS certificate and smoke-test the app
+        run: |
+          set -euo pipefail
+          fqdn=$(az container show -g "$RG" -n "$GROUP" --query ipAddress.fqdn -o tsv)
+          [[ "$fqdn" == *.uksouth.azurecontainer.io ]] || { echo "::error::Unexpected Container Instances domain"; exit 1; }
+          printf '%s {\n  reverse_proxy http://localhost:8000\n}\n' "$fqdn" > /tmp/Caddyfile
+          key=$(az storage account keys list -g "$RG" -n "$ACCOUNT" --query '[0].value' -o tsv)
+          az storage file upload --account-name "$ACCOUNT" --account-key "$key" --share-name jobsai-caddy-conf --source /tmp/Caddyfile --path Caddyfile --overwrite true -o none
+          unset key
+          az container restart -g "$RG" -n "$GROUP" -o none
+          curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 10 "https://$fqdn/health"
+          curl --fail --silent --show-error "https://$fqdn/api/config" | python -c 'import sys,json; assert json.load(sys.stdin)["production"] is True'
+          echo '## Job Hunter UK South — Azure Container Instances' >> "$GITHUB_STEP_SUMMARY"
+          echo "HTTPS dashboard: https://$fqdn" >> "$GITHUB_STEP_SUMMARY"
+          echo "All created resources: $RG, UK South only." >> "$GITHUB_STEP_SUMMARY"
+          echo 'Private resume Blob and Azure Files, dedicated managed identity and ACR. Single-instance pilot SQLite database.' >> "$GITHUB_STEP_SUMMARY"
