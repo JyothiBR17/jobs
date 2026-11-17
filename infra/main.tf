@@ -11,7 +11,7 @@ resource "azurerm_virtual_network" "main" {
 }
 
 resource "azurerm_subnet" "apps" {
-  name                 = "apps"
+  name                 = "${var.prefix}-apps"
   virtual_network_name = azurerm_virtual_network.main.name
   resource_group_name  = azurerm_resource_group.main.name
   address_prefixes     = ["10.62.0.0/23"]
@@ -24,7 +24,7 @@ resource "azurerm_subnet" "apps" {
 }
 
 resource "azurerm_subnet" "pg" {
-  name                 = "postgres"
+  name                 = "${var.prefix}-postgres"
   virtual_network_name = azurerm_virtual_network.main.name
   resource_group_name  = azurerm_resource_group.main.name
   address_prefixes     = ["10.62.2.0/27"]
@@ -37,7 +37,7 @@ resource "azurerm_subnet" "pg" {
 }
 
 resource "azurerm_private_dns_zone" "pg" {
-  name                = "private.postgres.database.azure.com"
+  name                = "${var.prefix}.postgres.database.azure.com"
   resource_group_name = azurerm_resource_group.main.name
 }
 
@@ -66,7 +66,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
 }
 
 resource "azurerm_postgresql_flexible_server_database" "main" {
-  name      = "jobhunter"
+  name      = "${var.prefix}db"
   server_id = azurerm_postgresql_flexible_server.main.id
   collation = "en_US.utf8"
   charset   = "UTF8"
@@ -89,7 +89,7 @@ resource "azurerm_storage_account" "main" {
 }
 
 resource "azurerm_storage_container" "resumes" {
-  name                  = "resumes"
+  name                  = "${var.prefix}-resumes"
   storage_account_id    = azurerm_storage_account.main.id
   container_access_type = "private"
 }
@@ -161,6 +161,7 @@ locals {
     ENTRA_SCOPE              = "api://${var.entra_client_id}/access_as_user"
     ENTRA_OWNER_OID          = var.entra_owner_oid
     AZURE_CLIENT_ID          = azurerm_user_assigned_identity.apps.client_id
+    BLOB_CONTAINER           = azurerm_storage_container.resumes.name
     BLOB_ACCOUNT_URL         = azurerm_storage_account.main.primary_blob_endpoint
     JOB_BOARDS_JSON          = var.job_boards_json
     NOTIFICATION_CHANNELS    = join(",", compact([contains(keys(var.notification_secret_uris), "TELEGRAM_BOT_TOKEN") ? "telegram" : "", contains(keys(var.notification_secret_uris), "SMTP_HOST") ? "email" : ""]))
@@ -302,7 +303,7 @@ resource "azurerm_servicebus_namespace" "main" {
 
 resource "azurerm_servicebus_queue" "pipeline" {
   for_each                             = toset(["discovery", "analysis", "sponsorship", "documents", "preparation", "approval", "notification"])
-  name                                 = each.key
+  name                                 = "${var.prefix}-${each.key}"
   namespace_id                         = azurerm_servicebus_namespace.main.id
   max_delivery_count                   = 5
   dead_lettering_on_message_expiration = true

@@ -6,10 +6,11 @@ variable "location" {
   default = "eastus"
 }
 variable "prefix" {
-  type = string
+  type    = string
+  default = "jobsai"
   validation {
-    condition     = can(regex("^[a-z][a-z0-9]{5,15}$", var.prefix))
-    error_message = "Use a globally unique lowercase alphanumeric prefix with 6 to 16 characters."
+    condition     = can(regex("^jobsai[a-z0-9]{0,10}$", var.prefix))
+    error_message = "The prefix must start with jobsai and contain 6 to 16 lowercase alphanumeric characters."
   }
 }
 variable "image" {

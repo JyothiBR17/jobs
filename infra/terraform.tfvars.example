@@ -1,8 +1,8 @@
-subscription_id         = "00000000-0000-0000-0000-000000000000"
-prefix                  = "uniquejobhunter"
+subscription_id         = "ed8f4826-ca81-4919-a8e9-79d5b2781b98"
+prefix                  = "jobsai"
 entra_client_id         = "00000000-0000-0000-0000-000000000000"
 entra_owner_oid         = "00000000-0000-0000-0000-000000000000"
 image                   = "ghcr.io/owner/job-hunter@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-database_dsn_secret_uri = "https://uniquejobhunter-vault.vault.azure.net/secrets/database"
+database_dsn_secret_uri = "https://jobsai-vault.vault.azure.net/secrets/database"
 enable_runtime          = false
 job_boards_json          = "[]"

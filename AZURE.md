@@ -50,3 +50,18 @@ The pilot implements a local, single-owner review workflow. Registry coverage be
 - [UK licensed sponsors register](https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers)
 - [Netherlands IND recognised sponsors register](https://ind.nl/en/public-register-recognised-sponsors/public-register-work)
 - [Lever posting and application API documentation](https://github.com/lever/postings-api)
+
+## jobsai deployment identity
+
+Both infrastructure and application deployments read the Azure identity client ID from the existing repository secret OAUTH_CLIENT_SECRET. Its value must be the application or managed identity client ID GUID. Azure Login exchanges a GitHub OIDC token using this ID. Tenant d69bf108-84a8-4b7f-b72a-73d0181ae024 and subscription ed8f4826-ca81-4919-a8e9-79d5b2781b98 are selected.
+
+Configure these additional federated credentials on that same identity, with issuer https://token.actions.githubusercontent.com and audience api://AzureADTokenExchange.
+
+- repo:JyothiBR17@146919422/jobs@1461491734:environment:production-plan
+- repo:JyothiBR17@146919422/jobs@1461491734:environment:production
+
+The supplied pull_request subject applies to pull request workflows without an environment context. Environment jobs use their environment subject. Ensure each Azure credential has the exact subject without trailing whitespace. Require a reviewer on the production GitHub environment.
+
+All configurable Azure resource names start with jobsai. Azure-required service names, workload profile type Consumption, role-definition names, and generated role-assignment GUIDs retain their platform-defined forms. The PostgreSQL DNS zone uses jobsai.postgres.database.azure.com. The database name defaults to `jobsaidb`.
+
+The application workflow builds a source-only GHCR image on main changes and deploys both web and scheduled worker on manual dispatch after the production environment gate. Configure GHCR package visibility as public for the public-image deployment model, or configure registry authentication before using a private image. Deploy initial infrastructure first and set its image to the published digest. Application updates change Azure image references directly. Update Terraform image input to that same digest before the next infrastructure apply.

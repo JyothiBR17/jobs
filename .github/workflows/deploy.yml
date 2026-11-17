@@ -10,7 +10,7 @@ permissions:
   contents: read
   id-token: write
 concurrency:
-  group: jobhunter-production
+  group: jobsai-production
   cancel-in-progress: false
 jobs:
   plan:
@@ -23,12 +23,19 @@ jobs:
           terraform_version: "1.13.5"
       - uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
       - name: Plan
         env:
           TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
+          ARM_USE_OIDC: "true"
+          ARM_USE_AZUREAD: "true"
+          ARM_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          ARM_TENANT_ID: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          ARM_SUBSCRIPTION_ID: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+          TF_VAR_prefix: jobsai
+          TF_VAR_subscription_id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
           TF_INPUT: "0"
           TF_BACKEND: ${{ vars.TERRAFORM_BACKEND_HCL }}
           TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
@@ -51,14 +58,21 @@ jobs:
           terraform_version: "1.13.5"
       - uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
       - name: Apply and verify
         env:
           TF_VAR_postgres_bootstrap_password: ${{ secrets.POSTGRES_BOOTSTRAP_PASSWORD }}
           TF_BACKEND: ${{ vars.TERRAFORM_BACKEND_HCL }}
           TF_VARS: ${{ vars.TERRAFORM_INPUTS_JSON }}
+          ARM_USE_OIDC: "true"
+          ARM_USE_AZUREAD: "true"
+          ARM_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          ARM_TENANT_ID: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          ARM_SUBSCRIPTION_ID: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+          TF_VAR_prefix: jobsai
+          TF_VAR_subscription_id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
           TF_INPUT: "0"
         run: |
           test -n "$TF_VARS"

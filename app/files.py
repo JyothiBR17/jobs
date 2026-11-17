@@ -12,7 +12,7 @@ def store_resume(content):
         from azure.identity import DefaultAzureCredential
         from azure.storage.blob import BlobClient
 
-        client = BlobClient(account, "resumes", key, credential=DefaultAzureCredential())
+        client = BlobClient(account, os.getenv("BLOB_CONTAINER", "jobsai-resumes"), key, credential=DefaultAzureCredential())
         client.upload_blob(content, overwrite=False)
     elif os.getenv("APP_ENV") == "production":
         raise RuntimeError("Azure Blob Storage is required in production")
