@@ -270,6 +270,12 @@ def status():
     has_resume = bool(candidate and candidate["resume_key"])
     verified = bool(candidate and Profile.model_validate_json(candidate["profile"]).source_verified)
     backend = get_ai_backend()
+    public_boards = boards(os.getenv("JOB_BOARDS_JSON"))
+    public_sources = [
+        {"source": f"{board['provider']}:{board['slug']}", "employer": board["employer"]}
+        for board in public_boards
+        if board.get("provider") in {"greenhouse", "lever", "lever-eu", "ashby"}
+    ]
     return {
         "policy": policy.model_dump(),
         "ready": has_resume and verified and check_email(policy.email) and policy.consent,
@@ -281,10 +287,9 @@ def status():
         "ai_source": backend.get("source", "personal_openai") if backend else None,
         "ai_processing_region": backend.get("model_region") if backend else None,
         "provider_api_ready": [source for source in policy.sources if board_capabilities(source)],
-        "suggested_sources": [
-            f"{item['provider']}:{item['slug']}" for item in boards(os.getenv("JOB_BOARDS_JSON"))
-            if item.get("provider") in {"lever", "lever-eu", "ashby"} and item.get("slug")
-        ],
+        "discovery_board_count": len(public_sources),
+        "discovery_sources": public_sources,
+        "suggested_sources": [],  # Public discovery does not authorize auto-submissions.
         "counts": {r["state"]: r["n"] for r in counts},
         "attempts": attempts,
         "last_cycle": json.loads(last["value"]) if last else None,
