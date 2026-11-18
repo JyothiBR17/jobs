@@ -91,6 +91,22 @@ class AutopilotTests(unittest.TestCase):
             "sources": ["lever:sampleco"],
         }
 
+    def test_public_catalog_is_not_application_authorization(self):
+        catalog = [{"provider": "ashby", "slug": "openai", "employer": "OpenAI"},
+                   {"provider": "lever", "slug": "spotify", "employer": "Spotify"}]
+        with patch.dict(os.environ, {"JOB_BOARDS_JSON": json.dumps(catalog)}):
+            response = self.client.get("/api/autopilot")
+        self.assertEqual(200, response.status_code)
+        result = response.json()
+        self.assertEqual(2, result["discovery_board_count"])
+        self.assertEqual(
+            {"ashby:openai", "lever:spotify"},
+            {row["source"] for row in result["discovery_sources"]},
+        )
+        self.assertEqual([], result["policy"]["sources"])
+        self.assertEqual([], result["provider_api_ready"])
+        self.assertFalse(result["policy"]["enabled"])
+
     def test_disabled_by_default_and_requires_verified_profile(self):
         current = self.client.get("/api/autopilot")
         self.assertEqual(200, current.status_code)
