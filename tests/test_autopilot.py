@@ -107,6 +107,13 @@ class AutopilotTests(unittest.TestCase):
         self.assertEqual([], result["provider_api_ready"])
         self.assertFalse(result["policy"]["enabled"])
 
+    def test_discovery_only_ashby_board_not_accepted_as_auto_submit(self):
+        data = self.policy(enabled=False)
+        data["sources"] = ["ashby:openai"]
+        response = self.client.put("/api/autopilot", json=data)
+        self.assertEqual(422, response.status_code)
+        self.assertIn("Lever", response.text)
+
     def test_disabled_by_default_and_requires_verified_profile(self):
         current = self.client.get("/api/autopilot")
         self.assertEqual(200, current.status_code)
