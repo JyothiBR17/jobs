@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - .github/workflows/uksouth-aci.yml
+      - app/**
+      - web/**
+      - migrations/**
+      - config/public-boards.json
+      - Dockerfile.aci
+      - requirements.txt
 permissions:
   contents: read
   id-token: write
