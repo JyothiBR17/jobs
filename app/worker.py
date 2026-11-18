@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .agents import process
+from .autopilot import run_cycle
 from .db import audit, checkpoint, database, migrate, now
 from .discovery import boards, fetch_board, ingest
 from .notifications import enqueue
@@ -127,6 +128,11 @@ def main():
         finally:
             with database(write=True) as db:
                 checkpoint(db, job["id"], now())
+    try:
+        run_cycle()
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        with database(write=True) as db:
+            audit(db, "autopilot", "cycle_failed", type(exc).__name__)
     enqueue_report()
     drain()
 
