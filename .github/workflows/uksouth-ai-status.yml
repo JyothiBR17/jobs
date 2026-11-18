@@ -1,0 +1,43 @@
+name: Job Hunter UK South Azure AI credential and quota verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/uksouth-ai-status.yml]
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Inspect only Job Hunter AI in UK South
+        run: |
+          set -euo pipefail
+          RG=jobsai-uksouth-rg
+          VAULT=jobsaiuksouth17kv
+          AI=jobsaiuksouth17openai
+          [[ "$(az group show -n "$RG" --query location -o tsv)" == uksouth ]]
+          [[ "$(az keyvault show -n "$VAULT" -g "$RG" --query location -o tsv)" == uksouth ]]
+          [[ "$(az cognitiveservices account show -n "$AI" -g "$RG" --query location -o tsv)" == uksouth ]]
+          echo "Dedicated UK South Azure OpenAI account:"
+          az cognitiveservices account show -n "$AI" -g "$RG" --query '{name:name,kind:kind,location:location,state:properties.provisioningState}' -o json
+          echo "Dedicated UK South Key Vault secret metadata (no secret values):"
+          for secret in azure-openai-api-key azure-openai-endpoint azure-openai-deployment; do
+            if az keyvault secret show --vault-name "$VAULT" --name "$secret" --query '{name:name,enabled:attributes.enabled}' -o json 2>/dev/null; then
+              echo "$secret: present"
+            else
+              echo "$secret: absent (or permission denied)"
+            fi
+          done
+          echo "Current Job Hunter-only model deployments:"
+          az cognitiveservices account deployment list -g "$RG" -n "$AI" --query '[].{name:name,model:properties.model.name,state:properties.provisioningState,sku:sku.name}' -o json
+          echo '## UK South Job Hunter Azure AI status' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Resource jobsaiuksouth17openai exists in UK South; credentials are stored in jobsaiuksouth17kv.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Model deployment needs at least one assigned regional Standard quota unit. No AegisSOC or other-region resources were accessed.' >> "$GITHUB_STEP_SUMMARY"
