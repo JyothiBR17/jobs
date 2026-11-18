@@ -18,6 +18,13 @@ jobs:
           client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
           tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
           subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Diagnose deployed Job Hunter image and container state read-only
+        run: |
+          set -euo pipefail
+          [[ "$(az account show --query id -o tsv)" == "ed8f4826-ca81-4919-a8e9-79d5b2781b98" ]]
+          [[ "$(az group show -n jobsai-uksouth-rg --query location -o tsv)" == "uksouth" ]]
+          az container show -g jobsai-uksouth-rg -n jobsai-uksouth-app --query \
+            '{state:provisioningState,location:location,containers:containers[].{name:name,image:properties.image,state:properties.instanceView.currentState.state,exit:properties.instanceView.currentState.exitCode},fqdn:ipAddress.fqdn}' -o json
       - name: Verify only UK South Job Hunter resources and HTTPS
         run: |
           set -euo pipefail
