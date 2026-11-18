@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .db import audit, database, now
 from .discovery import canonical
 from .notifications import enqueue
+from .secrets import get_openai_key
 
 
 class Strict(BaseModel):
@@ -71,7 +72,9 @@ def classify(text):
 
 
 def analyse(job, profile):
-    key = os.environ["OPENAI_API_KEY"]
+    key = get_openai_key()
+    if not key:
+        raise ValueError("OpenAI API key is not configured")
     model = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
     with httpx.Client(timeout=40, follow_redirects=False) as client:
         response = client.post(
@@ -327,7 +330,7 @@ def process(job_id):
     profile = Profile.model_validate_json(candidate["profile"])
     if not profile.source_verified:
         return
-    if not os.environ.get("OPENAI_API_KEY"):
+    if not get_openai_key():
         with database(write=True) as db:
             fresh = db.one(JOB_QUERY + " WHERE v.id=?", (job_id,))
             current = db.one("SELECT profile FROM candidate WHERE id=1")
