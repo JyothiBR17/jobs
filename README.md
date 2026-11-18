@@ -45,6 +45,16 @@ The dedicated `jobsaiuksouth17openai` account is still present with no deployed 
 
 Evidence: [read-only AegisSOC model and Key Vault bridge](https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-aegissoc-ai-bridge.yml) and [UK South deployment](https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-aci.yml).
 
+## Worldwide public employer board coverage (18 November 2026)
+
+- **53 validated public boards:** 31 Ashby, 15 Lever and 7 Greenhouse. The board catalog is in `config/public-boards.json` and is loaded by the UK South worker through `JOB_BOARDS_JSON` on deployment.
+- An independent, read-only GitHub Actions check tested **71** candidate board slugs against their providers' public job APIs. It confirmed **53 live responses** and excluded **18 invalid or unavailable slugs**. Some valid boards currently have zero vacancies; that does not constitute a submission entitlement. See `.github/workflows/verify-public-boards.yml` and `config/discovery-board-candidates.json`.
+- This catalog is a curated subset of the global market, **not every employer or every vacancy worldwide**. Greenhouse, Lever and Ashby public APIs work per employer, and no provider publishes a universal authorization list. Additional ATS providers (Workday, SmartRecruiters, Workable, Recruitee, Personio, etc.) require their own discovery adapters.
+- The dashboard shows public discovery feeds in a separate read-only directory; **none is automatically authorized for applications**. The auto-submission setting is deliberately blank until employer-issued credentials are configured for supported Lever/Lever EU boards.
+- Country filtering excludes India-based postings and unclassified locations. The worker never sends applications merely because it found a vacancy.
+- `LEVER_APPLY_KEYS_JSON` contains specific employer-granted application credentials. Public career URLs, board slugs and job listings are **not** API keys or consent to submit. Other ATS providers are discovery-only until proper submission adapters and permissions exist.
+- Discovery refresh and AI scoring incur API, compute, storage and shared-model costs; respect provider rate limits and monitor budget.
+
 ## Autonomous applications: what works and what remains gated
 
 1. In **Settings**, save verified professional facts and upload the actual résumé PDF. Never upload these files to the public repository.
