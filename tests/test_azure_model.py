@@ -7,7 +7,6 @@ import httpx
 
 from app.agents import Profile, analyse
 
-
 PROFILE = Profile.model_validate({
     "name": "Test Candidate", "summary": "Azure architecture",
     "facts": [{"text":"Implemented Azure Policy","category":"security","employer":"Example"}],
