@@ -23,6 +23,16 @@ This local workflow **does not connect to or change any AegisSOC resources**. On
 - Azure Container Instances, registry, storage, Key Vault operations, model tokens and other cloud services may incur charges. Set Azure cost alerts and OpenAI project budgets.
 - Do not alter or reuse any AegisSOC or non-UK-South resources for this application. A previous Central US attempt remains separate; this deployment does not manage or delete it.
 
+## Azure OpenAI deployment and quota status (verified 18 November 2026)
+
+- Azure OpenAI resource `jobsaiuksouth17openai` was provisioned successfully in **UK South**, resource group `jobsai-uksouth-rg`.
+- Azure Key Vault `jobsaiuksouth17kv` contains real Azure-issued `azure-openai-api-key` and `azure-openai-endpoint` secrets. The configured Job Hunter owner has Key Vault Secrets User access to this vault only.
+- The UK South account lists GPT-4.1 mini (`2025-04-14`) as a regional Standard candidate, but the subscription has **0 / 0 TPM quota units**, so Azure returns `InsufficientQuota` when deploying capacity 1. No successful model deployment exists. **Do not claim live AI inference works yet.**
+- The `azure-openai-deployment` secret will be created only after the model deploys. The application detects it and enables actual Azure OpenAI ranking automatically. It does not treat a stored API key by itself as proof of model readiness.
+- To resolve: request regional Standard GPT-4.1 mini capacity in **UK South** in Microsoft Foundry Quota. Free-tier (Tier 0) subscriptions may be ineligible for increased quota; Azure may require upgrading billing. Do not change tiers or approve costs without reviewing them.
+- After quota is granted, rerun <https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-azure-ai.yml>; the workflow creates the regional model, records the deployment secret and runs a synthetic inference smoke test, without touching AegisSOC.
+- Read-only status: <https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-ai-status.yml>. Never paste or commit vault secret values.
+
 ## Autonomous applications: what works and what remains gated
 
 1. In **Settings**, save verified professional facts and upload the actual résumé PDF. Never upload these files to the public repository.
