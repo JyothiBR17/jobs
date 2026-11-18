@@ -108,6 +108,9 @@ jobs:
             fi
           done
       - name: Create private app and HTTPS sidecar on Azure Container Instances
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LEVER_APPLY_KEYS_JSON: ${{ secrets.LEVER_APPLY_KEYS_JSON }}
         run: |
           set -euo pipefail
           key=$(az storage account keys list -g "$RG" -n "$ACCOUNT" --query '[0].value' -o tsv)
@@ -134,9 +137,18 @@ jobs:
               "AZURE_CLIENT_ID":os.environ["identity_client"],
               "BLOB_ACCOUNT_URL":f"https://{ac}.blob.core.windows.net/",
               "BLOB_CONTAINER":"jobsai-resumes",
-              "JOB_BOARDS_JSON":boards
+              "JOB_BOARDS_JSON":boards,
+              "OPENAI_MODEL":"gpt-5-mini",
+              "MAX_MONTHLY_MODEL_REQUESTS":"500",
+              "VERIFY_PUBLIC_REGISTRIES":"yes"
           }
           env=[{"name":k, "value":v} for k,v in values.items()]
+          for name in ("OPENAI_API_KEY", "LEVER_APPLY_KEYS_JSON"):
+              if os.environ.get(name):
+                  env.append({"name": name, "secureValue": os.environ[name]})
+          print("Agent secrets configured:", bool(os.getenv("OPENAI_API_KEY")),
+                "OpenAI, and", bool(os.getenv("LEVER_APPLY_KEYS_JSON")),
+                "authorized ATS API mappings (contents never logged)")
           def volume(name, share):
               return {"name":name,"azureFile":{"shareName":share,"storageAccountName":ac,"storageAccountKey":os.environ["key"]}}
           def mount(name,path):
