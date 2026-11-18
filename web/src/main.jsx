@@ -167,6 +167,15 @@ function App() {
         ].map(([label,value])=><article key={label}><span>{label}</span><strong>{value}</strong></article>)}
       </div>
       <section>
+        <h2>Connect OpenAI intelligence</h2>
+        <p>{autopilot.openai_enabled?'OpenAI model is connected. Structured analysis can evaluate your verified candidate facts against new jobs.':'OpenAI API credentials are not configured yet. To enable genuine GenAI matching, enter your project-scoped API key. It is encrypted and stored in the dedicated UK South Azure Key Vault, never in the browser or GitHub repository.'}</p>
+        {!autopilot.openai_enabled&&<form onSubmit={e=>{e.preventDefault();const key=e.currentTarget.elements.openaiKey.value;
+          action(()=>api('/agent/credentials/openai','POST',{key}),'OpenAI key securely stored in UK South');e.currentTarget.reset();}}>
+          <label>OpenAI project API key<input type="password" name="openaiKey" autoComplete="off" placeholder="sk-proj-…" minLength={20} required/></label>
+          <button>Connect OpenAI to my agents</button>
+        </form>}
+      </section>
+      <section>
         <h2>Autonomous application settings</h2>
         <p>Explicitly authorize named boards before any external submission. Automatic applications require a verified résumé, a real contact email, sponsorship evidence, and employer-authorized API credentials. Other job opportunities are queued for review.</p>
         <form onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);
@@ -182,7 +191,7 @@ function App() {
             <label>Daily application cap<input type="number" name="max_daily" min="1" max="20" defaultValue={autopilot.policy.max_daily} required/></label>
           </div>
           <label>Employer-authorized boards (comma-separated, e.g. lever:mycompany)
-            <input name="sources" defaultValue={autopilot.policy.sources.join(',')} placeholder="lever:company, lever-eu:company"/>
+            <input name="sources" defaultValue={autopilot.policy.sources.length?autopilot.policy.sources.join(','):(autopilot.suggested_sources||[]).join(',')} placeholder="lever:company, lever-eu:company"/>
           </label>
           <label className="inline-check"><input type="checkbox" name="consent" defaultChecked={autopilot.policy.consent}/> I authorize the agent to send my verified CV, contact details and cover letter to employers on these approved boards.</label>
           <label className="inline-check"><input type="checkbox" name="enabled" defaultChecked={autopilot.policy.enabled}/> Enable automatic submission when all eligibility and provider checks pass.</label>
