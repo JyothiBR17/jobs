@@ -151,7 +151,7 @@ function App() {
         <p>Every 30 minutes, the worker discovers vacancies, scores evidence against your verified CV, checks sponsorship evidence and prepares applications. It submits only through authorized employer APIs and records real confirmation IDs.</p>
         <div className="agent-chips">
           <span className={autopilot.policy.enabled?'indicator online':'indicator'}>{autopilot.policy.enabled?'● Autopilot enabled':'○ Autopilot paused'}</span>
-          <span className={autopilot.openai_enabled?'indicator online':'indicator'}>{autopilot.openai_enabled?'● OpenAI connected':'○ OpenAI key required'}</span>
+          <span className={autopilot.openai_enabled?'indicator online':'indicator'}>{autopilot.openai_enabled?'● Azure OpenAI connected':'○ AI model unavailable'}</span>
           <span className="indicator">↗ All countries excluding India</span>
           <span className="indicator">↻ 30-minute continuous cycle</span>
         </div>
@@ -168,7 +168,8 @@ function App() {
       </div>
       <section>
         <h2>Connect OpenAI intelligence</h2>
-        <p>{autopilot.openai_enabled?'OpenAI model is connected. Structured analysis can evaluate your verified candidate facts against new jobs.':'OpenAI API credentials are not configured yet. To enable genuine GenAI matching, enter your project-scoped API key. It is encrypted and stored in the dedicated UK South Azure Key Vault, never in the browser or GitHub repository.'}</p>
+        <p>{autopilot.openai_enabled ? (autopilot.ai_source==='aegissoc_shared'?'Connected to the existing AegisSOC Azure OpenAI model (GPT-4.1 mini). The Job Hunter app and credentials remain in UK South; model inference uses AegisSOC’s East US / global deployment. No AegisSOC incident data, SecOps application or knowledge index is accessed.':'OpenAI model connected for evidence-grounded analysis of your verified candidate facts.') : 'No working AI deployment is configured. Enter your own OpenAI API key only if you prefer a separate provider. It will be secured in the Job Hunter UK South Key Vault.'}</p>
+        {autopilot.ai_source==='aegissoc_shared'&&<p className="subtle">Source: AegisSOC Azure OpenAI · Processing: East US / Global Standard · Shared model usage may incur charges on the existing Azure subscription.</p>
         {!autopilot.openai_enabled&&<form onSubmit={e=>{e.preventDefault();const key=e.currentTarget.elements.openaiKey.value;
           action(()=>api('/agent/credentials/openai','POST',{key}),'OpenAI key securely stored in UK South');e.currentTarget.reset();}}>
           <label>OpenAI project API key<input type="password" name="openaiKey" autoComplete="off" placeholder="sk-proj-…" minLength={20} required/></label>
@@ -197,7 +198,7 @@ function App() {
           <label className="inline-check"><input type="checkbox" name="enabled" defaultChecked={autopilot.policy.enabled}/> Enable automatic submission when all eligibility and provider checks pass.</label>
           <button>Save and apply autopilot policy</button>
         </form>
-        <p className="subtle">Readiness: {autopilot.original_resume_uploaded?'PDF uploaded':'Upload original PDF'} · {autopilot.profile_verified?'Profile verified':'Verify profile'} · {autopilot.openai_enabled?'OpenAI active':'OpenAI API key not configured'} · {autopilot.provider_api_ready.length} boards with verified API configuration</p>
+        <p className="subtle">Readiness: {autopilot.original_resume_uploaded?'PDF uploaded':'Upload original PDF'} · {autopilot.profile_verified?'Profile verified':'Verify profile'} · {autopilot.openai_enabled?'AI active: '+(autopilot.model||'connected'):'AI model unavailable'} · {autopilot.provider_api_ready.length} boards with verified API configuration</p>
       </section>
       <section>
         <h2>Application execution ledger</h2>
