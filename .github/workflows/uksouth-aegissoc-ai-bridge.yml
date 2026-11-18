@@ -114,4 +114,4 @@ jobs:
           echo '## Job Hunter AI: verified shared AegisSOC deployment' >> "$GITHUB_STEP_SUMMARY"
           echo 'AegisSOC AI account and deployment were READ ONLY; no AegisSOC resource was modified.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Job Hunter vault: jobsaiuksouth17kv (UK South). Model execution: East US or global depending on AegisSOC SKU.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Real synthetic inference succeeded using Azure OpenAI's secondary key. Credentials copied only into the private Job Hunter vault, never logs or repository.' >> "$GITHUB_STEP_SUMMARY"
+          echo "Real synthetic inference succeeded using Azure OpenAI secondary key; credentials reside only in private Job Hunter Key Vault." >> "$GITHUB_STEP_SUMMARY"
