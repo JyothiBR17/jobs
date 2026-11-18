@@ -169,7 +169,7 @@ function App() {
       <section>
         <h2>Connect OpenAI intelligence</h2>
         <p>{autopilot.openai_enabled ? (autopilot.ai_source==='aegissoc_shared'?'Connected to the existing AegisSOC Azure OpenAI model (GPT-4.1 mini). The Job Hunter app and credentials remain in UK South; model inference uses AegisSOC’s East US / global deployment. No AegisSOC incident data, SecOps application or knowledge index is accessed.':'OpenAI model connected for evidence-grounded analysis of your verified candidate facts.') : 'No working AI deployment is configured. Enter your own OpenAI API key only if you prefer a separate provider. It will be secured in the Job Hunter UK South Key Vault.'}</p>
-        {autopilot.ai_source==='aegissoc_shared'&&<p className="subtle">Source: AegisSOC Azure OpenAI · Processing: East US / Global Standard · Shared model usage may incur charges on the existing Azure subscription.</p>
+        {autopilot.ai_source==='aegissoc_shared'&&<p className="subtle">Source: AegisSOC Azure OpenAI · Processing: East US / Global Standard · Shared model usage may incur charges on the existing Azure subscription.</p>}
         {!autopilot.openai_enabled&&<form onSubmit={e=>{e.preventDefault();const key=e.currentTarget.elements.openaiKey.value;
           action(()=>api('/agent/credentials/openai','POST',{key}),'OpenAI key securely stored in UK South');e.currentTarget.reset();}}>
           <label>OpenAI project API key<input type="password" name="openaiKey" autoComplete="off" placeholder="sk-proj-…" minLength={20} required/></label>
