@@ -185,6 +185,18 @@ class Workflow(unittest.TestCase):
             )
             self.assertEqual(1, len(db.all("SELECT * FROM vacancy")))
 
+    def test_global_catalog_keeps_technical_roles_not_general_marketing(self):
+        with database(write=True) as db:
+            irrelevant = dict(POSTING, source_id="marketing-global",
+                              title="Marketing Director",
+                              description="Our cloud platform uses Azure Security services.")
+            self.assertIsNone(ingest(db, irrelevant))
+            security = dict(POSTING, source_id="soc-global",
+                            title="Senior SOC Analyst",
+                            description="SIEM incident triage and security monitoring.",
+                            url="https://example.test/global-soc")
+            self.assertIsNotNone(ingest(db, security))
+
     def test_public_feed_parsing(self):
         def respond(request):
             self.assertEqual("boards-api.greenhouse.io", request.url.host)
