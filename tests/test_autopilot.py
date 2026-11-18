@@ -169,7 +169,7 @@ class AutopilotTests(unittest.TestCase):
         fake = Mock()
         fake.post.return_value = httpx.Response(200, json={
             "ok": True, "applicationId": "live-employer-id"
-        })
+        }, request=httpx.Request("POST", "https://api.lever.co/v0/postings/sampleco/test"))
         draft = {"answers": json.dumps({"name":"Example Candidate"}),
                  "letter": "I am applying to your role."}
         with patch.dict(os.environ, {"LEVER_APPLY_KEYS_JSON": json.dumps({
