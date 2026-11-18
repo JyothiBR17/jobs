@@ -1,0 +1,28 @@
+name: Verify global public employer boards
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - config/discovery-board-candidates.json
+      - scripts/validate_public_boards.py
+      - .github/workflows/verify-public-boards.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'httpx>=0.27,<1'
+      - name: Validate public employer feeds without any submission permission
+        run: python scripts/validate_public_boards.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: global-public-discovery-only
+          path: validated-global-boards.json
+          retention-days: 7
