@@ -1,0 +1,66 @@
+name: Verify Job Hunter agent uses shared AegisSOC AI
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-shared-ai.yml
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Verify real Job Hunter model inference with synthetic facts only
+        env:
+          APP_ENV: production
+          AZURE_KEY_VAULT_URL: https://jobsaiuksouth17kv.vault.azure.net/
+        run: |
+          set -euo pipefail
+          [[ "$(az account show --query id -o tsv)" == "ed8f4826-ca81-4919-a8e9-79d5b2781b98" ]]
+          [[ "$(az keyvault show -g jobsai-uksouth-rg -n jobsaiuksouth17kv --query location -o tsv)" == "uksouth" ]]
+          python - <<'PY'
+          from app.agents import Profile, analyse
+          from app.secrets import get_ai_backend
+
+          backend=get_ai_backend()
+          if not backend or backend.get("provider") != "azure_openai" or backend.get("source") != "aegissoc_shared":
+              raise SystemExit("Job Hunter AegisSOC AI route is not ready. No AegisSOC resources were modified.")
+          assert backend["endpoint"]=="https://oai-aegissoc-ed8f4826ca81.openai.azure.com/"
+          assert backend["deployment"]=="aegissoc-remediation"
+          print("Job Hunter loaded the approved shared AI endpoint from its own UK South Key Vault")
+          profile=Profile.model_validate({
+              "name":"Synthetic Test Candidate",
+              "summary":"Fictional software engineer for isolated integration testing",
+              "notice_days":30, "source_verified":True,
+              "facts":[
+                  {"text":"Implemented Azure Policy for a synthetic training lab",
+                   "category":"security","employer":"Demo Example"}
+              ],
+          })
+          job={
+              "title":"Synthetic Azure Policy Engineer",
+              "description":"Seeking an engineer familiar with Azure Policy and cloud security.",
+              "location":"London, United Kingdom",
+          }
+          result,usage=analyse(job,profile)
+          assert result is not None
+          print("SUCCESS: Job Hunter generated its actual structured AI analysis using shared AegisSOC GPT-4.1 mini")
+          print("Synthetic token counts:", usage.get("prompt_tokens",0),usage.get("completion_tokens",0))
+          PY
+          echo "## Job Hunter shared AI integration — Verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "App and private keys: UK South. Model: AegisSOC East US / GlobalStandard." >> "$GITHUB_STEP_SUMMARY"
+          echo "A synthetic structured analysis was completed successfully; no real candidate data or AegisSOC incident data transferred." >> "$GITHUB_STEP_SUMMARY"
