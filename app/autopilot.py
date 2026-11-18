@@ -14,6 +14,7 @@ from pydantic import Field
 
 from .agents import JOB_QUERY, Profile, Strict, Verify, eligible, prepare, verify
 from .db import audit, checkpoint, database, now
+from .discovery import boards
 from .files import load_resume
 from .notifications import enqueue
 from .secrets import get_openai_key
@@ -270,6 +271,10 @@ def status():
         "openai_enabled": bool(get_openai_key()),
         "model": os.environ.get("OPENAI_MODEL", "gpt-5-mini") if get_openai_key() else None,
         "provider_api_ready": [source for source in policy.sources if board_capabilities(source)],
+        "suggested_sources": [
+            f"{item['provider']}:{item['slug']}" for item in boards(os.getenv("JOB_BOARDS_JSON"))
+            if item.get("provider") in {"lever", "lever-eu", "ashby"} and item.get("slug")
+        ],
         "counts": {r["state"]: r["n"] for r in counts},
         "attempts": attempts,
         "last_cycle": json.loads(last["value"]) if last else None,
