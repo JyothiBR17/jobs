@@ -8,7 +8,6 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
 
 import httpx
 from pydantic import Field
@@ -189,6 +188,9 @@ def run_cycle(limit=15):
                 if evidence:
                     verify(db, job, Verify(status="confirmed", evidence=evidence, source=job["url"],
                         india_considered=True), "autopilot-evidence")
+                    updated = db.one(JOB_QUERY + " WHERE v.id=?", (job["id"],))
+                    if updated and eligible(updated):
+                        prepare(db, updated, profile, "autopilot-drafter")
     processed = 0
     start = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     with database() as db:
