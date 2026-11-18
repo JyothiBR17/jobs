@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
 from .agents import JOB_QUERY, Profile, Strict, Verify, classify, eligible, prepare, verify
+from .autopilot import AutoPolicy, configure as configure_autopilot, status as autopilot_status
 from .auth import user
 from .db import audit, database, migrate, now
 from .files import store_resume
@@ -117,6 +118,27 @@ def discovery_run(actor=Depends(user)):
     return dict(_worker_state)
 
 
+
+
+@app.get("/api/autopilot")
+def get_autopilot(actor=Depends(user)):
+    return autopilot_status()
+
+
+@app.put("/api/autopilot")
+def update_autopilot(data: AutoPolicy, actor=Depends(user)):
+    try:
+        configure_autopilot(data, actor)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return autopilot_status()
+
+
+@app.post("/api/autopilot/run", status_code=202)
+def run_autopilot(actor=Depends(user)):
+    if not _launch_worker():
+        raise HTTPException(409, "A discovery and application cycle is already running")
+    return dict(_worker_state)
 
 
 @app.get("/api/jobs")
