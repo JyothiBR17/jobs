@@ -43,8 +43,8 @@ def configure(data, actor):
     if len(set(data.sources)) != len(data.sources):
         raise ValueError("Duplicate source")
     for source in data.sources:
-        if not re.fullmatch(r"(?:lever|lever-eu|ashby):[A-Za-z0-9_-]{1,90}", source):
-            raise ValueError("Only named, supported provider boards can be authorized")
+        if not re.fullmatch(r"(?:lever|lever-eu):[A-Za-z0-9_-]{1,90}", source):
+            raise ValueError("Only Lever or Lever EU boards with employer-granted submission access can be used")
     if data.enabled:
         if not data.consent:
             raise ValueError("Explicit authorization is required for automatic external applications")
@@ -74,7 +74,7 @@ def safe_public_source(job, policy):
     if job["source"].startswith("mock:"):
         return False
     provider, slug = job["source"].split(":", 1)
-    return provider in {"lever", "lever-eu", "ashby"} and bool(re.fullmatch(r"[A-Za-z0-9_-]{1,90}", slug))
+    return provider in {"lever", "lever-eu"} and bool(re.fullmatch(r"[A-Za-z0-9_-]{1,90}", slug))
 
 
 def job_sponsorship_evidence(job):
