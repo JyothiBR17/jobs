@@ -1,6 +1,42 @@
 [
-  {"provider": "greenhouse", "slug": "grafanalabs", "employer": "Grafana Labs"},
-  {"provider": "greenhouse", "slug": "cloudflare", "employer": "Cloudflare"},
-  {"provider": "greenhouse", "slug": "datadog", "employer": "Datadog"},
-  {"provider": "lever", "slug": "palantir", "employer": "Palantir"}
+  {
+    "provider": "greenhouse",
+    "slug": "grafanalabs",
+    "employer": "Grafana Labs"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "cloudflare",
+    "employer": "Cloudflare"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "datadog",
+    "employer": "Datadog"
+  },
+  {
+    "provider": "lever",
+    "slug": "palantir",
+    "employer": "Palantir"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "xebiacee",
+    "employer": "Xebia CEE"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "planetlabs",
+    "employer": "Planet Labs"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "purestorage",
+    "employer": "Everpure"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "doitintl",
+    "employer": "DoiT International"
+  }
 ]
