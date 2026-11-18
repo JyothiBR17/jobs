@@ -152,7 +152,7 @@ function App() {
         <div className="agent-chips">
           <span className={autopilot.policy.enabled?'indicator online':'indicator'}>{autopilot.policy.enabled?'● Autopilot enabled':'○ Autopilot paused'}</span>
           <span className={autopilot.openai_enabled?'indicator online':'indicator'}>{autopilot.openai_enabled?'● Azure OpenAI connected':'○ AI model unavailable'}</span>
-          <span className="indicator">↗ All countries excluding India</span>
+          <span className="indicator">↗ Non-India job locations only</span>
           <span className="indicator">↻ 30-minute continuous cycle</span>
         </div>
         <div className="toolbar"><button disabled={discovery.status==='running'} onClick={()=>action(()=>api('/autopilot/run','POST'),'Agent cycle started')}>Run all agents now</button>
@@ -177,8 +177,19 @@ function App() {
         </form>}
       </section>
       <section>
+        <h2>Worldwide public job discovery</h2>
+        <p><strong>{autopilot.discovery_board_count||0} public employer boards configured.</strong> The worker checks published listings on Greenhouse, Lever and Ashby, uses your verified CV to rank relevant cloud and security roles, and excludes jobs located in India. These public feeds are not employer permission to submit applications.</p>
+        <details>
+          <summary>View configured public boards (discovery only)</summary>
+          <textarea className="public-sources" readOnly rows={7}
+            value={(autopilot.discovery_sources||[]).map(item=>item.source).join(',')} 
+            aria-label="Public discovery board identifiers" />
+          <p className="subtle">Copying these identifiers into an auto-apply field does not grant employer API authorization. New employers can be added to the candidate directory and checked before activation.</p>
+        </details>
+      </section>
+      <section>
         <h2>Autonomous application settings</h2>
-        <p>Explicitly authorize named boards before any external submission. Automatic applications require a verified résumé, a real contact email, sponsorship evidence, and employer-authorized API credentials. Other job opportunities are queued for review.</p>
+        <p>Only enter boards for which an employer has actually issued application-submission API credentials to your integration. Public board access is not sufficient. Automatic applications additionally require your verified résumé, contact details, explicit consent, verified eligibility and a real employer confirmation.</p>
         <form onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);
           const policy={enabled:data.get('enabled')==='on',consent:data.get('consent')==='on',
             email:String(data.get('email')||'').trim(),phone:String(data.get('phone')||'').trim(),
@@ -191,8 +202,8 @@ function App() {
             <label>Minimum AI match score<input type="number" name="min_score" min="70" max="100" defaultValue={autopilot.policy.min_score} required/></label>
             <label>Daily application cap<input type="number" name="max_daily" min="1" max="20" defaultValue={autopilot.policy.max_daily} required/></label>
           </div>
-          <label>Employer-authorized boards (comma-separated, e.g. lever:mycompany)
-            <input name="sources" defaultValue={autopilot.policy.sources.length?autopilot.policy.sources.join(','):(autopilot.suggested_sources||[]).join(',')} placeholder="lever:company, lever-eu:company"/>
+          <label>Authorized automatic-submission boards (comma-separated; actual employer-issued access required)
+            <input name="sources" defaultValue={autopilot.policy.sources.join(',')} placeholder="lever:employer-with-api-key, lever-eu:employer-with-api-key"/>
           </label>
           <label className="inline-check"><input type="checkbox" name="consent" defaultChecked={autopilot.policy.consent}/> I authorize the agent to send my verified CV, contact details and cover letter to employers on these approved boards.</label>
           <label className="inline-check"><input type="checkbox" name="enabled" defaultChecked={autopilot.policy.enabled}/> Enable automatic submission when all eligibility and provider checks pass.</label>
