@@ -269,14 +269,17 @@ def status():
         last = db.one("SELECT value FROM checkpoint WHERE key='autopilot:last_cycle'")
     has_resume = bool(candidate and candidate["resume_key"])
     verified = bool(candidate and Profile.model_validate_json(candidate["profile"]).source_verified)
+    backend = get_ai_backend()
     return {
         "policy": policy.model_dump(),
         "ready": has_resume and verified and check_email(policy.email) and policy.consent,
         "original_resume_uploaded": has_resume,
         "profile_verified": verified,
-        "openai_enabled": bool(get_ai_backend()),
-        "model": (get_ai_backend().get("deployment") if get_ai_backend().get("provider") == "azure_openai" else os.environ.get("OPENAI_MODEL", "gpt-5-mini")) if get_ai_backend() else None,
-        "ai_provider": get_ai_backend().get("provider") if get_ai_backend() else None,
+        "openai_enabled": bool(backend),
+        "model": (backend.get("deployment") if backend["provider"] == "azure_openai" else os.environ.get("OPENAI_MODEL", "gpt-5-mini")) if backend else None,
+        "ai_provider": backend.get("provider") if backend else None,
+        "ai_source": backend.get("source", "personal_openai") if backend else None,
+        "ai_processing_region": backend.get("model_region") if backend else None,
         "provider_api_ready": [source for source in policy.sources if board_capabilities(source)],
         "suggested_sources": [
             f"{item['provider']}:{item['slug']}" for item in boards(os.getenv("JOB_BOARDS_JSON"))
