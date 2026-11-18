@@ -56,10 +56,11 @@ _azure_lock = Lock()
 
 
 def get_azure_ai_settings():
-    """Fetch actual UK South Azure OpenAI credentials from the Job Hunter vault.
+    """Use Job Hunter's own UK South deployment if ready; otherwise the
+    explicitly authorized existing AegisSOC model, without modifying AegisSOC.
 
-    All three secrets are created by the dedicated Azure AI provisioning workflow.
-    A missing deployment is not treated as a configured model.
+    Credentials remain exclusively in the private Job Hunter UK South vault.
+    The AegisSOC model is an East US / GlobalStandard processing dependency.
     """
     vault = os.getenv("AZURE_KEY_VAULT_URL")
     if not vault or os.getenv("APP_ENV") != "production":
@@ -67,6 +68,7 @@ def get_azure_ai_settings():
     with _azure_lock:
         if time.monotonic() < _azure_cache["expires"]:
             return _azure_cache["value"]
+
     settings = None
     try:
         from azure.identity import DefaultAzureCredential
@@ -76,22 +78,49 @@ def get_azure_ai_settings():
             vault_url=vault,
             credential=DefaultAzureCredential(exclude_interactive_browser_credential=True),
         )
-        endpoint = client.get_secret("azure-openai-endpoint").value
-        deployment = client.get_secret("azure-openai-deployment").value
-        key = (client.get_secret("azure-openai-api-key").value or "").strip()
-        if (
-            endpoint == "https://jobsaiuksouth17openai.openai.azure.com/"
-            and deployment == "jobhunter-chat"
-            and key and len(key) >= 20
-        ):
-            settings = {"endpoint": endpoint, "deployment": deployment, "key": key}
+        providers = (
+            (
+                "azure-openai",
+                "https://jobsaiuksouth17openai.openai.azure.com/",
+                "jobhunter-chat",
+                "jobhunter_uksouth",
+                "uksouth",
+            ),
+            (
+                "shared-aegissoc-openai",
+                "https://oai-aegissoc-ed8f4826ca81.openai.azure.com/",
+                "aegissoc-remediation",
+                "aegissoc_shared",
+                "eastus_global",
+            ),
+        )
+        for prefix, expected_endpoint, expected_deployment, source, region in providers:
+            try:
+                endpoint = client.get_secret(prefix + "-endpoint").value
+                deployment = client.get_secret(prefix + "-deployment").value
+                key = (client.get_secret(prefix + "-api-key").value or "").strip()
+            except Exception:
+                # UK South model may have no deployment quota. Try shared AI instead.
+                continue
+            if (
+                endpoint == expected_endpoint
+                and deployment == expected_deployment
+                and len(key) >= 20
+            ):
+                settings = {
+                    "endpoint": endpoint,
+                    "deployment": deployment,
+                    "key": key,
+                    "source": source,
+                    "model_region": region,
+                }
+                break
     except Exception:
-        # Missing/denied secrets are a non-ready state, not a successful AI deployment.
+        # Missing vault access is not a successful AI deployment.
         settings = None
     with _azure_lock:
         _azure_cache.update(value=settings, expires=time.monotonic() + (300 if settings else 45))
     return settings
-
 
 def get_ai_backend():
     """Prefer UK South Azure OpenAI; fall back to an explicitly configured OpenAI key."""
