@@ -23,3 +23,26 @@ def store_resume(content):
         with os.fdopen(fd, "wb") as stream:
             stream.write(content)
     return key
+
+ 
+
+def load_resume(key):
+    """Read the candidate's original PDF only for a specifically authorized submission."""
+    if not __import__("re").fullmatch(r"[0-9a-f-]{36}\.pdf", key):
+        raise ValueError("Unexpected résumé object key")
+    account = os.getenv("BLOB_ACCOUNT_URL")
+    if account:
+        from azure.identity import DefaultAzureCredential
+        from azure.storage.blob import BlobClient
+
+        credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+        client = BlobClient(account, os.getenv("BLOB_CONTAINER", "jobsai-resumes"),
+                            key, credential=credential)
+        content = client.download_blob(max_concurrency=1).readall()
+    elif os.getenv("APP_ENV") != "production":
+        content = (Path(os.getenv("PRIVATE_DIR", "private")) / key).read_bytes()
+    else:
+        raise ValueError("Secure Blob resume storage is required in production")
+    if len(content) > 8 * 1024 * 1024 or not content.startswith(b"%PDF-"):
+        raise ValueError("Original PDF is missing or invalid")
+    return content
