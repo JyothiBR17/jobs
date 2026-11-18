@@ -1,0 +1,117 @@
+name: Job Hunter reuse existing AegisSOC Azure AI model
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/uksouth-aegissoc-ai-bridge.yml
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: jobhunter-aegissoc-ai-readonly-bridge
+  cancel-in-progress: false
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      SUBSCRIPTION: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      SOURCE_GROUP: rg-aegissoc-app-dev
+      SOURCE_NAME: oai-aegissoc-ed8f4826ca81
+      SOURCE_DEPLOYMENT: aegissoc-remediation
+      SOURCE_REGION: eastus
+      TARGET_GROUP: jobsai-uksouth-rg
+      TARGET_VAULT: jobsaiuksouth17kv
+      TARGET_REGION: uksouth
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Guard source read-only and Job Hunter destination UK South only
+        run: |
+          set -euo pipefail
+          [[ "$(az account show --query id -o tsv)" == "$SUBSCRIPTION" ]]
+          [[ "$SOURCE_GROUP" == "rg-aegissoc-app-dev" ]]
+          [[ "$SOURCE_NAME" == "oai-aegissoc-ed8f4826ca81" ]]
+          [[ "$SOURCE_DEPLOYMENT" == "aegissoc-remediation" ]]
+          [[ "$TARGET_GROUP" == "jobsai-uksouth-rg" && "$TARGET_VAULT" == "jobsaiuksouth17kv" ]]
+          [[ "$(az group show -n "$TARGET_GROUP" --query location -o tsv)" == "$TARGET_REGION" ]]
+          [[ "$(az keyvault show -g "$TARGET_GROUP" -n "$TARGET_VAULT" --query location -o tsv)" == "$TARGET_REGION" ]]
+      - name: Verify existing AegisSOC deployment without changing it
+        run: |
+          set -euo pipefail
+          account_json=$(az cognitiveservices account show -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query '{name:name,location:location,kind:kind,endpoint:properties.endpoint,provisioning:properties.provisioningState}' -o json)
+          ACCOUNT_JSON="$account_json" python - <<'PY'
+          import json,os
+          a=json.loads(os.environ['ACCOUNT_JSON'])
+          expected='https://oai-aegissoc-ed8f4826ca81.openai.azure.com/'
+          assert a['kind']=='OpenAI' and a['location'].lower()=='eastus'
+          assert a['endpoint']==expected
+          assert a['provisioning']=='Succeeded'
+          print('Read-only AegisSOC AI account verification succeeded: East US OpenAI account')
+          PY
+          deployment_json=$(az cognitiveservices account deployment show -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --deployment-name "$SOURCE_DEPLOYMENT" --query '{name:name,model:properties.model.name,version:properties.model.version,state:properties.provisioningState,sku:sku.name,capacity:sku.capacity}' -o json)
+          DEPLOYMENT_JSON="$deployment_json" python - <<'PY'
+          import json,os
+          d=json.loads(os.environ['DEPLOYMENT_JSON'])
+          if d['state']!='Succeeded' or d['model'] not in ('gpt-4.1-mini','gpt-4.1-nano'):
+              raise SystemExit('No supported succeeded AegisSOC AI model to share; source unchanged')
+          if d['sku'] not in ('GlobalStandard','Standard'):
+              raise SystemExit('Unexpected AegisSOC deployment SKU; source unchanged')
+          print('Existing AegisSOC deployment confirmed:', d['name'], d['model'], d['sku'])
+          PY
+      - name: Verify a synthetic inference using existing AegisSOC resource
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          az cognitiveservices account keys list -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query key1 -o tsv > "$keyfile"
+          test -s "$keyfile"
+          export MODEL_KEY_FILE="$keyfile"
+          python - <<'PY'
+          import json,os,urllib.request
+          key=open(os.environ["MODEL_KEY_FILE"]).read().strip()
+          endpoint=f'https://{os.environ["SOURCE_NAME"]}.openai.azure.com/openai/deployments/{os.environ["SOURCE_DEPLOYMENT"]}/chat/completions?api-version=2024-10-21'
+          data=json.dumps({"messages":[{"role":"user","content":"Return only OK"}],"max_tokens":32}).encode()
+          req=urllib.request.Request(endpoint,data=data,headers={"Content-Type":"application/json","api-key":key})
+          with urllib.request.urlopen(req,timeout=45) as response:
+              answer=json.load(response)
+          assert answer.get("choices"), "No confirmed inference response"
+          print('Synthetic inference succeeded on existing AegisSOC model (no candidate data sent)')
+          PY
+      - name: Store an isolated Job Hunter copy of the source credential in UK South vault
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          az cognitiveservices account keys list -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query key1 -o tsv > "$keyfile"
+          test -s "$keyfile"
+          TARGET_SCOPE=$(az keyvault show -g "$TARGET_GROUP" -n "$TARGET_VAULT" --query id -o tsv)
+          [[ "$TARGET_SCOPE" == *"/resourceGroups/jobsai-uksouth-rg/providers/Microsoft.KeyVault/vaults/jobsaiuksouth17kv" ]] || exit 1
+          # The GitHub OIDC principal previously received permissions only on this Job Hunter vault.
+          python - "$keyfile" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          p.write_text(p.read_text().strip())
+          PY
+          az keyvault secret set --vault-name "$TARGET_VAULT" \
+            --name shared-aegissoc-openai-api-key --file "$keyfile" --encoding utf-8 --only-show-errors -o none
+          az keyvault secret set --vault-name "$TARGET_VAULT" \
+            --name shared-aegissoc-openai-endpoint \
+            --value "https://oai-aegissoc-ed8f4826ca81.openai.azure.com/" --only-show-errors -o none
+          az keyvault secret set --vault-name "$TARGET_VAULT" \
+            --name shared-aegissoc-openai-deployment --value "$SOURCE_DEPLOYMENT" --only-show-errors -o none
+          for secret in shared-aegissoc-openai-api-key shared-aegissoc-openai-endpoint shared-aegissoc-openai-deployment; do
+            az keyvault secret show --vault-name "$TARGET_VAULT" --name "$secret" --query '{name:name,enabled:attributes.enabled}' -o json
+          done
+          echo '## Job Hunter AI: verified shared AegisSOC deployment' >> "$GITHUB_STEP_SUMMARY"
+          echo 'AegisSOC AI account and deployment were READ ONLY; no AegisSOC resource was modified.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Job Hunter vault: jobsaiuksouth17kv (UK South). Model execution: East US or global depending on AegisSOC SKU.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Real synthetic inference succeeded. Credentials copied only into the private Job Hunter vault, never logs or repository.' >> "$GITHUB_STEP_SUMMARY"
