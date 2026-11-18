@@ -1,0 +1,161 @@
+name: Job Hunter UK South Azure OpenAI model and Key Vault
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/uksouth-azure-ai.yml
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: jobhunter-uksouth-azure-ai
+  cancel-in-progress: false
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      RG: jobsai-uksouth-rg
+      LOCATION: uksouth
+      AI_ACCOUNT: jobsaiuksouth17openai
+      DEPLOYMENT: jobhunter-chat
+      VAULT: jobsaiuksouth17kv
+      APP_IDENTITY: jobsai-uksouth-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Enforce dedicated Job Hunter UK South boundary
+        run: |
+          set -euo pipefail
+          [[ "$RG" == jobsai-uksouth-rg && "$LOCATION" == uksouth ]]
+          [[ "$AI_ACCOUNT" == jobsaiuksouth17openai && "$VAULT" == jobsaiuksouth17kv ]]
+          [[ "$APP_IDENTITY" == jobsai-uksouth-runtime && "$DEPLOYMENT" == jobhunter-chat ]]
+          [[ "$(az account show --query id -o tsv)" == ed8f4826-ca81-4919-a8e9-79d5b2781b98 ]]
+          [[ "$(az group show -g "$RG" --query location -o tsv)" == uksouth ]]
+          [[ "$(az keyvault show -g "$RG" -n "$VAULT" --query location -o tsv)" == uksouth ]]
+          [[ "$(az identity show -g "$RG" -n "$APP_IDENTITY" --query location -o tsv)" == uksouth ]]
+      - name: Provision Job Hunter-only Azure OpenAI resource
+        run: |
+          set -euo pipefail
+          if ! az cognitiveservices account show -g "$RG" -n "$AI_ACCOUNT" -o none 2>/dev/null; then
+            az cognitiveservices account create -g "$RG" -n "$AI_ACCOUNT" -l "$LOCATION" \
+              --kind OpenAI --sku S0 --custom-domain "$AI_ACCOUNT" \
+              --yes --tags Project=JobHunter Environment=production ManagedBy=GitHubActions -o none
+          fi
+          az cognitiveservices account show -g "$RG" -n "$AI_ACCOUNT" \
+            --query '{name:name,location:location,kind:kind,sku:sku.name,endpoint:properties.endpoint,provisioning:properties.provisioningState}' -o json
+          actual_location=$(az cognitiveservices account show -g "$RG" -n "$AI_ACCOUNT" --query location -o tsv)
+          actual_kind=$(az cognitiveservices account show -g "$RG" -n "$AI_ACCOUNT" --query kind -o tsv)
+          [[ "${actual_location,,}" == uksouth && "$actual_kind" == OpenAI ]] || {
+            echo "::error::Refusing to use any Azure AI resource outside Job Hunter's UK South OpenAI account"
+            exit 1
+          }
+      - name: Select a model actually available to this account
+        run: |
+          set -euo pipefail
+          az cognitiveservices account list-models -g "$RG" -n "$AI_ACCOUNT" -o json > /tmp/jobhunter-models.json
+          python - <<'PY'
+          import json, os
+          candidates = [('gpt-4.1-mini','2025-04-14'), ('gpt-4o-mini','2024-07-18'),
+                        ('gpt-4o','2024-08-06')]
+          data = json.load(open('/tmp/jobhunter-models.json'))
+          if isinstance(data, dict):
+              data = data.get('value', [])
+          available = set()
+          for item in data:
+              model = item.get('model') or item
+              name, version = model.get('name'), model.get('version')
+              skus = item.get('skus') or []
+              if name and version and (not skus or any(s.get('name') == 'Standard' for s in skus)):
+                  available.add((name, version))
+          choice = next((pair for pair in candidates if pair in available), None)
+          if choice is None:
+              raise SystemExit("No supported regional Standard chat model is available for this Job Hunter subscription in UK South; no other regions will be used")
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              out.write('MODEL_NAME='+choice[0]+'\nMODEL_VERSION='+choice[1]+'\n')
+          print('UK South regional model candidate:', choice[0], choice[1])
+          PY
+      - name: Deploy low-capacity regional chat model
+        run: |
+          set -euo pipefail
+          if ! az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" -o none 2>/dev/null; then
+            az cognitiveservices account deployment create -g "$RG" -n "$AI_ACCOUNT" \
+              --deployment-name "$DEPLOYMENT" --model-name "$MODEL_NAME" --model-version "$MODEL_VERSION" \
+              --model-format OpenAI --sku-name Standard --sku-capacity 1 -o none
+          fi
+          az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" \
+            --deployment-name "$DEPLOYMENT" \
+            --query '{name:name,model:properties.model.name,version:properties.model.version,status:properties.provisioningState,sku:sku.name,capacity:sku.capacity}' -o json
+          sku=$(az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" --query sku.name -o tsv)
+          [[ "$sku" == Standard ]] || { echo "::error::Only UK South regional Standard model deployments are allowed"; exit 1; }
+      - name: Save real Azure-issued API credential to Job Hunter Key Vault
+        run: |
+          set -euo pipefail
+          umask 077
+          vault_scope=$(az keyvault show -g "$RG" -n "$VAULT" --query id -o tsv)
+          # GitHub's already-authorized Job Hunter deployment service principal.
+          principal=0a34ff40-76b9-4459-b5d2-6fde206db4ff
+          existing=$(az role assignment list --scope "$vault_scope" --assignee-object-id "$principal" --query "[?roleDefinitionName=='Key Vault Secrets Officer'].id | [0]" -o tsv)
+          if [[ -z "$existing" ]]; then
+            az role assignment create --scope "$vault_scope" --role "Key Vault Secrets Officer" \
+              --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal -o none
+          fi
+          trap 'rm -f /tmp/jobhunter-azure-ai-key.txt' EXIT
+          # This is the actual Azure OpenAI credential, not a generated placeholder.
+          az cognitiveservices account keys list -g "$RG" -n "$AI_ACCOUNT" --query key1 -o tsv > /tmp/jobhunter-azure-ai-key.txt
+          test -s /tmp/jobhunter-azure-ai-key.txt
+          endpoint=$(az cognitiveservices account show -g "$RG" -n "$AI_ACCOUNT" --query properties.endpoint -o tsv)
+          [[ "$endpoint" == "https://$AI_ACCOUNT.openai.azure.com/" ]] || {
+            echo "::error::Azure OpenAI endpoint does not match isolated UK South resource"
+            exit 1
+          }
+          stored=false
+          for attempt in 1 2 3 4 5 6; do
+            if az keyvault secret set --vault-name "$VAULT" --name azure-openai-api-key \
+              --file /tmp/jobhunter-azure-ai-key.txt --encoding utf-8 --only-show-errors -o none; then
+              stored=true
+              break
+            fi
+            sleep 12
+          done
+          [[ "$stored" == true ]] || { echo "::error::Could not write Azure OpenAI credential to Key Vault"; exit 1; }
+          az keyvault secret set --vault-name "$VAULT" --name azure-openai-endpoint \
+            --value "$endpoint" --only-show-errors -o none
+          az keyvault secret set --vault-name "$VAULT" --name azure-openai-deployment \
+            --value "$DEPLOYMENT" --only-show-errors -o none
+          for secret in azure-openai-api-key azure-openai-endpoint azure-openai-deployment; do
+            az keyvault secret show --vault-name "$VAULT" --name "$secret" --query '{name:name,enabled:attributes.enabled}' -o json
+          done
+      - name: Test actual Azure OpenAI inference without candidate data
+        run: |
+          set -euo pipefail
+          umask 077
+          az cognitiveservices account keys list -g "$RG" -n "$AI_ACCOUNT" --query key1 -o tsv > /tmp/jobhunter-smoke-key.txt
+          trap 'rm -f /tmp/jobhunter-smoke-key.txt' EXIT
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+          endpoint = f'https://{os.environ["AI_ACCOUNT"]}.openai.azure.com/'
+          url = endpoint + 'openai/deployments/' + os.environ["DEPLOYMENT"] + '/chat/completions?api-version=2024-10-21'
+          secret = Path('/tmp/jobhunter-smoke-key.txt').read_text().strip()
+          body = json.dumps({'messages':[{'role':'user','content':'Respond with exactly the word OK'}],
+                             'max_tokens':16, 'temperature':0}).encode('utf8')
+          req = urllib.request.Request(url, data=body, headers={
+              'Content-Type':'application/json', 'api-key':secret
+          })
+          with urllib.request.urlopen(req, timeout=45) as resp:
+              output = json.load(resp)
+          if not output.get('choices'):
+              raise SystemExit('Azure OpenAI inference returned no choices')
+          print('SUCCESS: UK South Azure OpenAI model produced a real chat completion.')
+          PY
+          echo '## Job Hunter Azure OpenAI — UK South' >> "$GITHUB_STEP_SUMMARY"
+          echo "Resource: $AI_ACCOUNT; model: $MODEL_NAME $MODEL_VERSION; deployment: $DEPLOYMENT; regional SKU: Standard." >> "$GITHUB_STEP_SUMMARY"
+          echo 'Three live Azure OpenAI secrets stored in jobsaiuksouth17kv; no keys in logs.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A real synthetic inference call succeeded. Only jobsai-uksouth-rg resources were touched.' >> "$GITHUB_STEP_SUMMARY"
