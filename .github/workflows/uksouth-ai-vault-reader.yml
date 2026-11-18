@@ -1,0 +1,46 @@
+name: Job Hunter UK South Key Vault owner read access
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/uksouth-ai-vault-reader.yml]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      RG: jobsai-uksouth-rg
+      VAULT: jobsaiuksouth17kv
+      EXPECTED_OWNER: 040aecfe-01a7-4d5e-8295-0416a495e1d3
+      CONFIG: ${{ vars.TERRAFORM_INPUTS_JSON }}
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          tenant-id: d69bf108-84a8-4b7f-b72a-73d0181ae024
+          subscription-id: ed8f4826-ca81-4919-a8e9-79d5b2781b98
+      - name: Grant Job Hunter configured owner read-only access to its vault
+        run: |
+          set -euo pipefail
+          [[ "$RG" == jobsai-uksouth-rg && "$VAULT" == jobsaiuksouth17kv ]]
+          [[ "$(az account show --query id -o tsv)" == ed8f4826-ca81-4919-a8e9-79d5b2781b98 ]]
+          [[ "$(az group show -n "$RG" --query location -o tsv)" == uksouth ]]
+          [[ "$(az keyvault show -g "$RG" -n "$VAULT" --query location -o tsv)" == uksouth ]]
+          export EXPECTED_OWNER CONFIG
+          python - <<'PY'
+          import json,os
+          assert json.loads(os.environ["CONFIG"])["entra_owner_oid"] == os.environ["EXPECTED_OWNER"]
+          PY
+          scope=$(az keyvault show -g "$RG" -n "$VAULT" --query id -o tsv)
+          [[ "$scope" == *"/resourceGroups/jobsai-uksouth-rg/providers/Microsoft.KeyVault/vaults/jobsaiuksouth17kv" ]]
+          current=$(az role assignment list --scope "$scope" --assignee-object-id "$EXPECTED_OWNER" \
+            --query "[?roleDefinitionName=='Key Vault Secrets User'].id | [0]" -o tsv)
+          if [[ -z "$current" ]]; then
+            az role assignment create --scope "$scope" --role 'Key Vault Secrets User' \
+              --assignee-object-id "$EXPECTED_OWNER" --assignee-principal-type User -o none
+          fi
+          echo "Granted Job Hunter owner Key Vault Secrets User on $VAULT only."
+          echo "No secret values disclosed, no AegisSOC access changed."
