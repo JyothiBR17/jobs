@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
 from .agents import JOB_QUERY, Profile, Strict, Verify, classify, eligible, prepare, verify
-from .autopilot import AutoPolicy, configure as configure_autopilot, status as autopilot_status
 from .auth import user
+from .autopilot import AutoPolicy, configure as configure_autopilot, status as autopilot_status
 from .db import audit, database, migrate, now
 from .files import store_resume
 from .notifications import enqueue
