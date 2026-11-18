@@ -63,7 +63,7 @@ class Workflow(unittest.TestCase):
         if os.getenv("TEST_POSTGRES_URL"):
             with database(write=True) as db:
                 db.execute(
-                    "TRUNCATE employer_sponsor,model_usage,tracking,submission,approval,draft,matching,sponsorship,vacancy,employer,candidate,audit,checkpoint,outbox"
+                    "TRUNCATE autopilot_attempt,employer_sponsor,model_usage,tracking,submission,approval,draft,matching,sponsorship,vacancy,employer,candidate,audit,checkpoint,outbox"
                 )
         with database(write=True) as db:
             self.id = ingest(db, POSTING)
