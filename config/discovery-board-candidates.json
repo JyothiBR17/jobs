@@ -1,0 +1,357 @@
+[
+  {
+    "provider": "greenhouse",
+    "slug": "grafanalabs",
+    "employer": "Grafana Labs"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "cloudflare",
+    "employer": "Cloudflare"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "datadog",
+    "employer": "Datadog"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "xebiacee",
+    "employer": "Xebia CEE"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "planetlabs",
+    "employer": "Planet Labs"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "purestorage",
+    "employer": "Everpure"
+  },
+  {
+    "provider": "greenhouse",
+    "slug": "doitintl",
+    "employer": "DoiT International"
+  },
+  {
+    "provider": "lever",
+    "slug": "palantir",
+    "employer": "Palantir"
+  },
+  {
+    "provider": "lever",
+    "slug": "spotify",
+    "employer": "Spotify"
+  },
+  {
+    "provider": "lever",
+    "slug": "zoox",
+    "employer": "Zoox"
+  },
+  {
+    "provider": "lever",
+    "slug": "shopback",
+    "employer": "ShopBack"
+  },
+  {
+    "provider": "lever",
+    "slug": "xsolla",
+    "employer": "Xsolla"
+  },
+  {
+    "provider": "lever",
+    "slug": "quantinuum",
+    "employer": "Quantinuum"
+  },
+  {
+    "provider": "lever",
+    "slug": "kpler",
+    "employer": "Kpler"
+  },
+  {
+    "provider": "lever",
+    "slug": "scottlogic",
+    "employer": "Scott Logic"
+  },
+  {
+    "provider": "lever",
+    "slug": "coupa",
+    "employer": "Coupa"
+  },
+  {
+    "provider": "lever",
+    "slug": "brillio",
+    "employer": "Brillio"
+  },
+  {
+    "provider": "lever",
+    "slug": "nium",
+    "employer": "Nium"
+  },
+  {
+    "provider": "lever",
+    "slug": "provectus",
+    "employer": "Provectus"
+  },
+  {
+    "provider": "lever",
+    "slug": "waabi",
+    "employer": "Waabi"
+  },
+  {
+    "provider": "lever",
+    "slug": "hive",
+    "employer": "Hive"
+  },
+  {
+    "provider": "lever",
+    "slug": "matchgroup",
+    "employer": "Match Group"
+  },
+  {
+    "provider": "lever",
+    "slug": "extremenetworks",
+    "employer": "Extreme Networks"
+  },
+  {
+    "provider": "lever",
+    "slug": "fieldai",
+    "employer": "Field AI"
+  },
+  {
+    "provider": "lever",
+    "slug": "ahead",
+    "employer": "AHEAD"
+  },
+  {
+    "provider": "lever",
+    "slug": "redhorse",
+    "employer": "Redhorse"
+  },
+  {
+    "provider": "lever",
+    "slug": "theaenergy",
+    "employer": "Thea Energy"
+  },
+  {
+    "provider": "lever",
+    "slug": "plusai",
+    "employer": "PlusAI"
+  },
+  {
+    "provider": "lever",
+    "slug": "atomcomputing",
+    "employer": "Atom Computing"
+  },
+  {
+    "provider": "lever",
+    "slug": "arcteryx",
+    "employer": "Arc'teryx"
+  },
+  {
+    "provider": "lever",
+    "slug": "steerbridge",
+    "employer": "SteerBridge"
+  },
+  {
+    "provider": "lever",
+    "slug": "anavation",
+    "employer": "AnaVation"
+  },
+  {
+    "provider": "lever",
+    "slug": "agiledefense",
+    "employer": "Agile Defense"
+  },
+  {
+    "provider": "lever",
+    "slug": "penumbra",
+    "employer": "Penumbra"
+  },
+  {
+    "provider": "lever",
+    "slug": "woven",
+    "employer": "Woven"
+  },
+  {
+    "provider": "lever",
+    "slug": "niantic",
+    "employer": "Niantic"
+  },
+  {
+    "provider": "ashby",
+    "slug": "openai",
+    "employer": "OpenAI"
+  },
+  {
+    "provider": "ashby",
+    "slug": "elevenlabs",
+    "employer": "ElevenLabs"
+  },
+  {
+    "provider": "ashby",
+    "slug": "sierra",
+    "employer": "Sierra"
+  },
+  {
+    "provider": "ashby",
+    "slug": "notion",
+    "employer": "Notion"
+  },
+  {
+    "provider": "ashby",
+    "slug": "ramp",
+    "employer": "Ramp"
+  },
+  {
+    "provider": "ashby",
+    "slug": "cursor",
+    "employer": "Cursor"
+  },
+  {
+    "provider": "ashby",
+    "slug": "replit",
+    "employer": "Replit"
+  },
+  {
+    "provider": "ashby",
+    "slug": "supabase",
+    "employer": "Supabase"
+  },
+  {
+    "provider": "ashby",
+    "slug": "docker",
+    "employer": "Docker"
+  },
+  {
+    "provider": "ashby",
+    "slug": "modal",
+    "employer": "Modal"
+  },
+  {
+    "provider": "ashby",
+    "slug": "linear",
+    "employer": "Linear"
+  },
+  {
+    "provider": "ashby",
+    "slug": "posthog",
+    "employer": "PostHog"
+  },
+  {
+    "provider": "ashby",
+    "slug": "payabli",
+    "employer": "Payabli"
+  },
+  {
+    "provider": "ashby",
+    "slug": "substack",
+    "employer": "Substack"
+  },
+  {
+    "provider": "ashby",
+    "slug": "mercury",
+    "employer": "Mercury"
+  },
+  {
+    "provider": "ashby",
+    "slug": "vercel",
+    "employer": "Vercel"
+  },
+  {
+    "provider": "ashby",
+    "slug": "deel",
+    "employer": "Deel"
+  },
+  {
+    "provider": "ashby",
+    "slug": "clerk",
+    "employer": "Clerk"
+  },
+  {
+    "provider": "ashby",
+    "slug": "harvey",
+    "employer": "Harvey"
+  },
+  {
+    "provider": "ashby",
+    "slug": "mistral",
+    "employer": "Mistral AI"
+  },
+  {
+    "provider": "ashby",
+    "slug": "perplexity",
+    "employer": "Perplexity"
+  },
+  {
+    "provider": "ashby",
+    "slug": "cohere",
+    "employer": "Cohere"
+  },
+  {
+    "provider": "ashby",
+    "slug": "plaid",
+    "employer": "Plaid"
+  },
+  {
+    "provider": "ashby",
+    "slug": "baseten",
+    "employer": "Baseten"
+  },
+  {
+    "provider": "ashby",
+    "slug": "snowflake",
+    "employer": "Snowflake"
+  },
+  {
+    "provider": "ashby",
+    "slug": "checkout",
+    "employer": "Checkout.com"
+  },
+  {
+    "provider": "ashby",
+    "slug": "exa",
+    "employer": "Exa"
+  },
+  {
+    "provider": "ashby",
+    "slug": "crusoe",
+    "employer": "Crusoe"
+  },
+  {
+    "provider": "ashby",
+    "slug": "fluidstack",
+    "employer": "FluidStack"
+  },
+  {
+    "provider": "ashby",
+    "slug": "appliedintuition",
+    "employer": "Applied Intuition"
+  },
+  {
+    "provider": "ashby",
+    "slug": "wayve",
+    "employer": "Wayve"
+  },
+  {
+    "provider": "ashby",
+    "slug": "skydio",
+    "employer": "Skydio"
+  },
+  {
+    "provider": "ashby",
+    "slug": "cognition",
+    "employer": "Cognition"
+  },
+  {
+    "provider": "ashby",
+    "slug": "lovable",
+    "employer": "Lovable"
+  },
+  {
+    "provider": "ashby",
+    "slug": "trmlabs",
+    "employer": "TRM Labs"
+  }
+]
