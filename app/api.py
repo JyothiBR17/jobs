@@ -20,6 +20,7 @@ from .autopilot import status as autopilot_status
 from .db import audit, database, migrate, now
 from .files import store_resume
 from .notifications import enqueue
+from .secrets import save_openai_key
 
 _worker_lock = Lock()
 _worker_state = {"status": "idle", "started": None, "finished": None, "error": None}
@@ -141,6 +142,23 @@ def run_autopilot(actor=Depends(user)):
     if not _launch_worker():
         raise HTTPException(409, "A discovery and application cycle is already running")
     return dict(_worker_state)
+
+
+class OpenAIKey(Strict):
+    key: str = Field(min_length=20, max_length=250)
+
+
+@app.post("/api/agent/credentials/openai")
+def set_openai_credential(data: OpenAIKey, actor=Depends(user)):
+    try:
+        save_openai_key(data.key)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Job Hunter Key Vault is not ready for secret updates") from exc
+    with database(write=True) as db:
+        audit(db, actor, "openai_credential_configured", "jobhunter")
+    return {"configured": True}
 
 
 @app.get("/api/jobs")
