@@ -4,7 +4,7 @@ import { PublicClientApplication } from '@azure/msal-browser';
 import './style.css';
 
 const pages = ['Overview', 'Job Discovery', 'Recommended Jobs', 'Sponsorship Verification',
-  'Application Approval Centre', 'Submitted Applications', 'CV Library', 'Cover Letter Library',
+  'Agentic Autopilot', 'Application Approval Centre', 'Submitted Applications', 'CV Library', 'Cover Letter Library',
   'Interview Tracker', 'Analytics', 'Agent Activity', 'Integrations', 'Settings', 'Security and Audit Logs'];
 const statuses = {confirmed:'Confirmed', conditional:'Conditional', licensed_only:'Licence only',
   unavailable:'Unavailable', unknown:'Unknown'};
@@ -28,6 +28,7 @@ function App() {
   const [events, setEvents] = useState([]);
   const [usage, setUsage] = useState({});
   const [discovery, setDiscovery] = useState({status:'idle'});
+  const [autopilot, setAutopilot] = useState(null);
   const [search, setSearch] = useState('');
   const [country, setCountry] = useState('');
   const [filter, setFilter] = useState('');
@@ -50,10 +51,10 @@ function App() {
   }
 
   async function reload() {
-    const [j,d,t,a,p,u,s] = await Promise.all(['/jobs','/drafts','/tracking','/audit','/profile','/usage','/discovery/status'].map(path => api(path)));
+    const [j,d,t,a,p,u,s,auto] = await Promise.all(['/jobs','/drafts','/tracking','/audit','/profile','/usage','/discovery/status','/autopilot'].map(path => api(path)));
     setJobs(j); setDrafts(d); setTracking(t); setEvents(a); setUsage(u); setDiscovery(s);
     setProfile(JSON.stringify(p.profile || {name:'',summary:'',notice_days:90,facts:[],source_verified:false},null,2));
-    setStored(p.resume_stored); setSelection([]); setReady(true);
+    setStored(p.resume_stored); setAutopilot(auto); setSelection([]); setReady(true);
   }
 
   useEffect(() => {
@@ -143,6 +144,63 @@ function App() {
       <select aria-label="Country" value={country} onChange={e=>setCountry(e.target.value)}><option value="">All countries</option>{[...new Set(jobs.map(j=>j.country))].sort().map(c=><option key={c}>{c}</option>)}</select>
       <select aria-label="Sponsorship" value={filter} onChange={e=>setFilter(e.target.value)}><option value="">All sponsorship statuses</option>{Object.entries(statuses).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>
       </div>{jobTable(visible)}</>}
+    {page==='Agentic Autopilot' && autopilot && <div className="autopilot-page">
+      <section className="autopilot-hero">
+        <p className="eyebrow">AUTONOMOUS INTERNATIONAL JOB SEARCH</p>
+        <h2>AI agent orchestration · Global except India</h2>
+        <p>Every 30 minutes, the worker discovers vacancies, scores evidence against your verified CV, checks sponsorship evidence and prepares applications. It submits only through authorized employer APIs and records real confirmation IDs.</p>
+        <div className="agent-chips">
+          <span className={autopilot.policy.enabled?'indicator online':'indicator'}>{autopilot.policy.enabled?'● Autopilot enabled':'○ Autopilot paused'}</span>
+          <span className={autopilot.openai_enabled?'indicator online':'indicator'}>{autopilot.openai_enabled?'● OpenAI connected':'○ OpenAI key required'}</span>
+          <span className="indicator">↗ All countries excluding India</span>
+          <span className="indicator">↻ 30-minute continuous cycle</span>
+        </div>
+        <div className="toolbar"><button disabled={discovery.status==='running'} onClick={()=>action(()=>api('/autopilot/run','POST'),'Agent cycle started')}>Run all agents now</button>
+          <span>Last cycle: {autopilot.last_cycle?format(autopilot.last_cycle.time):'Not run yet'}</span></div>
+      </section>
+      <div className="metrics">
+        {[
+          ['Confirmed employer submissions',autopilot.counts.confirmed||0],
+          ['Requires your attention',autopilot.counts.needs_review||0],
+          ['Uncertain outcomes',autopilot.counts.unknown||0],
+          ['Rate-limited',autopilot.counts.rate_limited||0],
+        ].map(([label,value])=><article key={label}><span>{label}</span><strong>{value}</strong></article>)}
+      </div>
+      <section>
+        <h2>Autonomous application settings</h2>
+        <p>Explicitly authorize named boards before any external submission. Automatic applications require a verified résumé, a real contact email, sponsorship evidence, and employer-authorized API credentials. Other job opportunities are queued for review.</p>
+        <form onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);
+          const policy={enabled:data.get('enabled')==='on',consent:data.get('consent')==='on',
+            email:String(data.get('email')||'').trim(),phone:String(data.get('phone')||'').trim(),
+            min_score:Number(data.get('min_score')),max_daily:Number(data.get('max_daily')),
+            sources:String(data.get('sources')||'').split(',').map(s=>s.trim()).filter(Boolean)};
+          action(()=>api('/autopilot','PUT',policy),'Autopilot policy saved');}}>
+          <div className="auto-grid">
+            <label>Application contact email<input type="email" name="email" defaultValue={autopilot.policy.email} required/></label>
+            <label>Phone (optional)<input type="tel" name="phone" defaultValue={autopilot.policy.phone}/></label>
+            <label>Minimum AI match score<input type="number" name="min_score" min="70" max="100" defaultValue={autopilot.policy.min_score} required/></label>
+            <label>Daily application cap<input type="number" name="max_daily" min="1" max="20" defaultValue={autopilot.policy.max_daily} required/></label>
+          </div>
+          <label>Employer-authorized boards (comma-separated, e.g. lever:mycompany)
+            <input name="sources" defaultValue={autopilot.policy.sources.join(',')} placeholder="lever:company, lever-eu:company"/>
+          </label>
+          <label className="inline-check"><input type="checkbox" name="consent" defaultChecked={autopilot.policy.consent}/> I authorize the agent to send my verified CV, contact details and cover letter to employers on these approved boards.</label>
+          <label className="inline-check"><input type="checkbox" name="enabled" defaultChecked={autopilot.policy.enabled}/> Enable automatic submission when all eligibility and provider checks pass.</label>
+          <button>Save and apply autopilot policy</button>
+        </form>
+        <p className="subtle">Readiness: {autopilot.original_resume_uploaded?'PDF uploaded':'Upload original PDF'} · {autopilot.profile_verified?'Profile verified':'Verify profile'} · {autopilot.openai_enabled?'OpenAI active':'OpenAI API key not configured'} · {autopilot.provider_api_ready.length} boards with verified API configuration</p>
+      </section>
+      <section>
+        <h2>Application execution ledger</h2>
+        {autopilot.attempts.length===0?<p className="empty">No external application attempts. Submitted counts remain zero until an employer confirms receipt.</p>:<div className="table"><table>
+          <thead><tr><th>Job</th><th>Country</th><th>State</th><th>Evidence</th><th>Last update</th></tr></thead>
+          <tbody>{autopilot.attempts.map(a=><tr key={a.vacancy_id}>
+            <td><strong>{a.title}</strong><div className="subtle">{a.employer}</div></td><td>{a.country}</td>
+            <td><span className={'pill '+(a.state==='confirmed'?'confirmed':'unknown')}>{a.state.replaceAll('_',' ')}</span></td>
+            <td>{a.state==='confirmed'?'Employer ID: '+a.reference:a.detail}</td><td>{format(a.updated_at)}</td></tr>)}</tbody>
+        </table></div>}
+      </section>
+    </div>}
     {page==='Application Approval Centre' && <><div className="toolbar">
       <button className="minor" onClick={()=>setSelection(queue.filter(d=>eligibleIds.has(d.vacancy_id)).map(d=>d.vacancy_id))}>Select eligible</button>
       <button disabled={!selected.length} onClick={()=>setDialog({type:'batch',decision:'approved'})}>Approve selected</button>
@@ -155,13 +213,13 @@ function App() {
     {['CV Library','Cover Letter Library'].includes(page) && drafts.map(d=><article className="list" key={d.vacancy_id}><strong>{d.title} · {d.employer}</strong>
       <button className="minor" onClick={()=>setDialog({type:'document',text:page==='CV Library'?d.cv:d.letter})}>Preview</button></article>)}
     {['Submitted Applications','Interview Tracker'].includes(page) && <>{tracking.submissions.map(s=><article className="list" key={s.vacancy_id}>
-      <div><strong>{s.employer} · {s.title}</strong><p>Candidate-reported confirmation · {s.reference}</p></div>
+      <div><strong>{s.employer} · {s.title}</strong><p>{s.channel==='lever_api'?'Employer API confirmed':'Candidate-reported'} · {s.reference}</p></div>
       <button className="minor" onClick={()=>setDialog({type:'track',id:s.vacancy_id})}>Add update</button></article>)}
       {tracking.events.filter(e=>page!=='Interview Tracker'||e.status==='interview').map(e=><article className="list" key={e.id}><strong>{e.status.replaceAll('_',' ')}</strong><span>{e.description}</span><time>{format(e.event_time)}</time></article>)}
       {!tracking.submissions.length && <p className="empty">No submissions recorded.</p>}</>}
     {['Security and Audit Logs','Agent Activity'].includes(page) && <div className="table"><table><thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Record</th></tr></thead><tbody>
-      {events.filter(e=>page!=='Agent Activity'||['discovery','matching','sponsorship_registry'].includes(e.actor)).map(e=><tr key={e.id}><td>{format(e.time)}</td><td>{e.actor}</td><td>{e.action}</td><td>{e.target}</td></tr>)}</tbody></table></div>}
-    {page==='Integrations' && <section><h2>Provider configuration</h2><p>Configure public boards, OpenAI, email and Telegram in the server environment. Approved applications open the employer’s hosted form.</p></section>}
+      {events.filter(e=>page!=='Agent Activity'||['discovery','matching','sponsorship_registry','autopilot','autopilot-evidence','autopilot-drafter'].includes(e.actor)).map(e=><tr key={e.id}><td>{format(e.time)}</td><td>{e.actor}</td><td>{e.action}</td><td>{e.target}</td></tr>)}</tbody></table></div>}
+    {page==='Integrations' && <section><h2>Provider configuration</h2><p>Configure employer board feeds, a project-scoped OpenAI API key, and employer-approved application API credentials as deployment secrets. See Agentic Autopilot for execution history; unsupported forms remain in the review queue.</p></section>}
     {page==='Settings' && <section><h2>Candidate profile</h2><p>Save candidate facts, upload the original PDF, then set source_verified to true after comparing the facts against the résumé.</p>
       <label>Import candidate profile JSON<input type="file" accept=".json,application/json" onChange={async e=>{const file=e.target.files[0]; if (file) setProfile(await file.text());}}/></label>
       <form onSubmit={e=>{e.preventDefault();action(()=>api('/profile','PUT',JSON.parse(profile)),'Profile saved');}}><textarea aria-label="Candidate profile JSON" value={profile} onChange={e=>setProfile(e.target.value)} rows={15}/><button>Save profile</button></form>
