@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .db import audit, database, now
 from .discovery import canonical
 from .notifications import enqueue
-from .secrets import get_openai_key
+from .secrets import get_ai_backend
 
 
 class Strict(BaseModel):
@@ -72,14 +72,29 @@ def classify(text):
 
 
 def analyse(job, profile):
-    key = get_openai_key()
-    if not key:
-        raise ValueError("OpenAI API key is not configured")
-    model = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+    backend = get_ai_backend()
+    if not backend:
+        raise ValueError("No verified OpenAI model deployment or API key is configured")
+    model = (
+        backend["deployment"]
+        if backend["provider"] == "azure_openai"
+        else os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+    )
+    url = (
+        backend["endpoint"].rstrip("/")
+        + f"/openai/deployments/{model}/chat/completions?api-version=2024-10-21"
+        if backend["provider"] == "azure_openai"
+        else "https://api.openai.com/v1/chat/completions"
+    )
+    headers = (
+        {"api-key": backend["key"]}
+        if backend["provider"] == "azure_openai"
+        else {"Authorization": f"Bearer {backend['key']}"}
+    )
     with httpx.Client(timeout=40, follow_redirects=False) as client:
         response = client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
+            url,
+            headers=headers,
             json={
                 "model": model,
                 "max_completion_tokens": 3600,
@@ -330,7 +345,7 @@ def process(job_id):
     profile = Profile.model_validate_json(candidate["profile"])
     if not profile.source_verified:
         return
-    if not get_openai_key():
+    if not get_ai_backend():
         with database(write=True) as db:
             fresh = db.one(JOB_QUERY + " WHERE v.id=?", (job_id,))
             current = db.one("SELECT profile FROM candidate WHERE id=1")
