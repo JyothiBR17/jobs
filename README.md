@@ -33,6 +33,18 @@ This local workflow **does not connect to or change any AegisSOC resources**. On
 - After quota is granted, rerun <https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-azure-ai.yml>; the workflow creates the regional model, records the deployment secret and runs a synthetic inference smoke test, without touching AegisSOC.
 - Read-only status: <https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-ai-status.yml>. Never paste or commit vault secret values.
 
+## Reusing AegisSOC's existing Azure OpenAI model (18 November 2026)
+
+**Requested cross-project AI exception:** The AegisSOC `oai-aegissoc-ed8f4826ca81` OpenAI account, in **East US**, has a working `aegissoc-remediation` GPT-4.1 mini **GlobalStandard** deployment. The Job Hunter bridge checks the AegisSOC resource and performs a synthetic inference, but never mutates the AegisSOC resource, app, database, Sentinel, RAG, or any other AegisSOC asset.
+
+The read-only source integration retrieves **key2**, the secondary Azure OpenAI account key, not AegisSOC's application key1. The secondary key, endpoint, and deployment name are saved as `shared-aegissoc-openai-*` secrets in **Job Hunter's own UK South Key Vault** (`jobsaiuksouth17kv`). No keys are committed or printed. The Job Hunter runtime validates an exact endpoint/deployment allowlist before using these credentials. If a regional Job Hunter model is successfully deployed in the future, that dedicated UK South model is preferred.
+
+**Processing location:** Job Hunter hosting and secret storage remain UK South, but the shared AI model is East US **GlobalStandard**, so model inference may be processed outside UK South and candidate professional facts are transmitted to that model. Original résumé PDFs and AegisSOC's incident data/RAG records are not sent to the shared model by the Job Hunter scoring code. Token consumption is charged against the shared Azure subscription/model quota and could affect AegisSOC throughput. Keep cost and usage limits enabled.
+
+The dedicated `jobsaiuksouth17openai` account is still present with no deployed model due to its **0/0 regional GPT-4.1 mini quota**; its absence does not block the explicitly requested shared-model fallback.
+
+Evidence: [read-only AegisSOC model and Key Vault bridge](https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-aegissoc-ai-bridge.yml) and [UK South deployment](https://github.com/JyothiBR17/jobs/actions/workflows/uksouth-aci.yml).
+
 ## Autonomous applications: what works and what remains gated
 
 1. In **Settings**, save verified professional facts and upload the actual résumé PDF. Never upload these files to the public repository.
