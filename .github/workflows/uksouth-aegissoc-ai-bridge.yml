@@ -70,7 +70,7 @@ jobs:
           umask 077
           keyfile=$(mktemp)
           trap 'rm -f "$keyfile"' EXIT
-          az cognitiveservices account keys list -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query key1 -o tsv > "$keyfile"
+          az cognitiveservices account keys list -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query key2 -o tsv > "$keyfile"
           test -s "$keyfile"
           export MODEL_KEY_FILE="$keyfile"
           python - <<'PY'
@@ -84,13 +84,13 @@ jobs:
           assert answer.get("choices"), "No confirmed inference response"
           print('Synthetic inference succeeded on existing AegisSOC model (no candidate data sent)')
           PY
-      - name: Store an isolated Job Hunter copy of the source credential in UK South vault
+      - name: Store Azure OpenAI secondary key for Job Hunter in UK South vault
         run: |
           set -euo pipefail
           umask 077
           keyfile=$(mktemp)
           trap 'rm -f "$keyfile"' EXIT
-          az cognitiveservices account keys list -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query key1 -o tsv > "$keyfile"
+          az cognitiveservices account keys list -g "$SOURCE_GROUP" -n "$SOURCE_NAME" --query key2 -o tsv > "$keyfile"
           test -s "$keyfile"
           TARGET_SCOPE=$(az keyvault show -g "$TARGET_GROUP" -n "$TARGET_VAULT" --query id -o tsv)
           [[ "$TARGET_SCOPE" == *"/resourceGroups/jobsai-uksouth-rg/providers/Microsoft.KeyVault/vaults/jobsaiuksouth17kv" ]] || exit 1
@@ -114,4 +114,4 @@ jobs:
           echo '## Job Hunter AI: verified shared AegisSOC deployment' >> "$GITHUB_STEP_SUMMARY"
           echo 'AegisSOC AI account and deployment were READ ONLY; no AegisSOC resource was modified.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Job Hunter vault: jobsaiuksouth17kv (UK South). Model execution: East US or global depending on AegisSOC SKU.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Real synthetic inference succeeded. Credentials copied only into the private Job Hunter vault, never logs or repository.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Real synthetic inference succeeded using Azure OpenAI's secondary key. Credentials copied only into the private Job Hunter vault, never logs or repository.' >> "$GITHUB_STEP_SUMMARY"
