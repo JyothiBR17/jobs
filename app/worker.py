@@ -12,7 +12,7 @@ from .db import audit, checkpoint, database, migrate, now
 from .discovery import boards, fetch_board, ingest
 from .notifications import enqueue
 from .registry import refresh_registries
-from .secrets import get_openai_key
+from .secrets import get_ai_backend
 
 
 def discover():
@@ -114,7 +114,7 @@ def main():
     discover()
     refresh_registries()
     # Evidence-only ranking runs without an API key; an LLM is optional.
-    batch_limit = 10 if get_openai_key() else 100
+    batch_limit = 10 if get_ai_backend() else 100
     with database() as db:
         jobs = db.all("""SELECT v.id FROM vacancy v LEFT JOIN matching m ON m.vacancy_id=v.id
             LEFT JOIN checkpoint c ON c.key=v.id
