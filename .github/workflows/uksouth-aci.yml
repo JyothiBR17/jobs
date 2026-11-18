@@ -107,6 +107,22 @@ jobs:
               az role assignment create --scope "$scope" --role "$role" --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal -o none
             fi
           done
+      - name: Provision dedicated UK South OpenAI Key Vault
+        run: |
+          set -euo pipefail
+          VAULT=jobsaiuksouth17kv
+          [[ "$RG" == jobsai-uksouth-rg && "$LOC" == uksouth ]]
+          if ! az keyvault show -n "$VAULT" -g "$RG" -o none 2>/dev/null; then
+            az keyvault create -n "$VAULT" -g "$RG" -l "$LOC" --sku standard --enable-rbac-authorization true -o none
+          fi
+          vault_location=$(az keyvault show -n "$VAULT" -g "$RG" --query location -o tsv)
+          [[ "${vault_location,,}" == uksouth ]] || { echo "::error::Job Hunter Key Vault region mismatch"; exit 1; }
+          vault_id=$(az keyvault show -n "$VAULT" -g "$RG" --query id -o tsv)
+          principal=$(az identity show -g "$RG" -n "$IDENTITY" --query principalId -o tsv)
+          existing=$(az role assignment list --scope "$vault_id" --assignee-object-id "$principal" --query "[?roleDefinitionName=='Key Vault Secrets Officer'].id | [0]" -o tsv)
+          if [[ -z "$existing" ]]; then
+            az role assignment create --scope "$vault_id" --role 'Key Vault Secrets Officer' --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal -o none
+          fi
       - name: Create private app and HTTPS sidecar on Azure Container Instances
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -138,6 +154,7 @@ jobs:
               "BLOB_ACCOUNT_URL":f"https://{ac}.blob.core.windows.net/",
               "BLOB_CONTAINER":"jobsai-resumes",
               "JOB_BOARDS_JSON":boards,
+              "AZURE_KEY_VAULT_URL":"https://jobsaiuksouth17kv.vault.azure.net/",
               "OPENAI_MODEL":"gpt-5-mini",
               "MAX_MONTHLY_MODEL_REQUESTS":"500",
               "VERIFY_PUBLIC_REGISTRIES":"yes"
