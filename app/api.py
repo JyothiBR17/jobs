@@ -14,7 +14,9 @@ from pydantic import Field
 
 from .agents import JOB_QUERY, Profile, Strict, Verify, classify, eligible, prepare, verify
 from .auth import user
-from .autopilot import AutoPolicy, configure as configure_autopilot, status as autopilot_status
+from .autopilot import AutoPolicy
+from .autopilot import configure as configure_autopilot
+from .autopilot import status as autopilot_status
 from .db import audit, database, migrate, now
 from .files import store_resume
 from .notifications import enqueue
