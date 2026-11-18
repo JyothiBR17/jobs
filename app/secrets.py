@@ -78,7 +78,7 @@ def get_azure_ai_settings():
         )
         endpoint = client.get_secret("azure-openai-endpoint").value
         deployment = client.get_secret("azure-openai-deployment").value
-        key = client.get_secret("azure-openai-api-key").value
+        key = (client.get_secret("azure-openai-api-key").value or "").strip()
         if (
             endpoint == "https://jobsaiuksouth17openai.openai.azure.com/"
             and deployment == "jobhunter-chat"
