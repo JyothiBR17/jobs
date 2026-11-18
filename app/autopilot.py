@@ -16,6 +16,7 @@ from .agents import JOB_QUERY, Profile, Strict, Verify, eligible, prepare, verif
 from .db import audit, checkpoint, database, now
 from .files import load_resume
 from .notifications import enqueue
+from .secrets import get_openai_key
 
 
 class AutoPolicy(Strict):
@@ -266,8 +267,8 @@ def status():
         "ready": has_resume and verified and check_email(policy.email) and policy.consent,
         "original_resume_uploaded": has_resume,
         "profile_verified": verified,
-        "openai_enabled": bool(os.environ.get("OPENAI_API_KEY")),
-        "model": os.environ.get("OPENAI_MODEL", "gpt-5-mini") if os.environ.get("OPENAI_API_KEY") else None,
+        "openai_enabled": bool(get_openai_key()),
+        "model": os.environ.get("OPENAI_MODEL", "gpt-5-mini") if get_openai_key() else None,
         "provider_api_ready": [source for source in policy.sources if board_capabilities(source)],
         "counts": {r["state"]: r["n"] for r in counts},
         "attempts": attempts,
