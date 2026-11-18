@@ -132,7 +132,16 @@ INDIA = re.compile(
     r"\b(india|chennai|bengaluru|bangalore|hyderabad|mumbai|pune|gurugram|gurgaon|noida|delhi|kolkata|ahmedabad|kochi|trivandrum|remote[,/-]\s*in)\b",
     re.I,
 )
-ROLE = re.compile(r"azure|cloud|devsecops|devops|infrastructure|platform|terraform|landing zone", re.I)
+ROLE = re.compile(
+    r"azure|cloud|devsecops|devops|infrastructure|platform|terraform|landing zone|"
+    r"security|cyber|siem|\bsoc\b|\bsre\b|site reliability|identity|entra",
+    re.I,
+)
+TECH_ROLE = re.compile(
+    r"engineer|architect|analyst|consultant|specialist|administrator|"
+    r"operations|infrastructure|platform|reliability|security|cyber|devops",
+    re.I,
+)
 
 
 def country_for(location, explicit=""):
@@ -217,6 +226,8 @@ def ingest(db, row):
     description = row["description"]
     country = country_for(location, row.get("country_code", ""))
     if not country or re.search(r"\b(?:based in|remote in|located in) india\b", description, re.I):
+        return None
+    if not TECH_ROLE.search(row["title"]):
         return None
     if not ROLE.search(row["title"] + " " + description):
         return None
