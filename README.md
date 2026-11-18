@@ -1,6 +1,6 @@
 # AI International Job Hunter
 
-Private international Azure job-search workspace. This repository contains a functional local pilot and isolated Azure deployment options. Live Azure hosting still depends on subscription quotas.
+Private international Azure job-search workspace with opt-in agentic discovery, OpenAI matching, sponsorship-evidence verification, and provider-authorized submission. The application is deployed on an isolated UK South Azure Container Instances stack.
 
 ## One-command Windows launch (Docker Desktop)
 
@@ -14,11 +14,32 @@ Open **http://localhost:8000**. Sign in with the generated `LOCAL_ACCESS_TOKEN` 
 
 This local workflow **does not connect to or change any AegisSOC resources**. Only loopback localhost port 8000 is exposed.
 
-## Azure deployment status — 18 November 2026
+## UK South live application — 18 November 2026
 
-The dedicated `.github/workflows/job-hunter-appservice.yml` pipeline is scoped to `jobsai-rg` and requires an explicit manual run. Central US hosting could not be provisioned because Azure reports **zero B1 quota and zero F1 quota** for App Service. Azure also rejected the selected PostgreSQL Flexible Server SKU and rejected creating a second Container Apps environment. AegisSOC's existing environment is deliberately not used. Do **not** assume that a successful build means the app is live in Azure.
+- Dashboard: https://jobsai-uksouth-jyothibr17.uksouth.azurecontainer.io
+- Only resource group `jobsai-uksouth-rg` is used. The App Service quota is zero in this subscription, so the live runtime is an independent UK South Azure Container Instances group, not AegisSOC's Container Apps environment.
+- ACI uses an HTTPS reverse proxy, dedicated private Azure Blob/Azure Files storage, registry and managed identity. The worker runs every 30 minutes while the container is healthy. Restart policy is Always, but **uninterrupted 24/7 availability is not an SLA**.
+- Job Hunter's user-managed OpenAI key is saved to its separate UK South Key Vault. ChatGPT Plus is not an OpenAI API key. Employer application API credentials are unrelated and must be separately authorized by the employer.
+- Azure Container Instances, registry, storage, Key Vault operations, model tokens and other cloud services may incur charges. Set Azure cost alerts and OpenAI project budgets.
+- Do not alter or reuse any AegisSOC or non-UK-South resources for this application. A previous Central US attempt remains separate; this deployment does not manage or delete it.
 
-Once an F1 quota of 1 is granted, run the isolated App Service workflow. F1 is a testing tier without Always On, so its scheduled worker is best-effort; a production SLA requires a suitable approved hosting tier and a production database.
+## Autonomous applications: what works and what remains gated
+
+1. In **Settings**, save verified professional facts and upload the actual résumé PDF. Never upload these files to the public repository.
+2. In **Agentic Autopilot**, connect a project-scoped OpenAI API key once. The authenticated API writes it to the Job Hunter-only UK South Key Vault. The engine uses source-grounded structured model analysis; without a key it uses conservative literal-evidence matching and labels that mode.
+3. In **Agentic Autopilot**, enter a real contact email, choose specific authorized employer boards, choose score and daily limits, explicitly authorize external submissions and enable the automation. Disabled is the default; no hidden employer applications occur before these conditions are met.
+4. The worker discovers configured public ATS boards every 30 minutes and automatically excludes India and unclassified locations. Worldwide does **not** mean every employer or every job board is discoverable: add permitted named board integrations as needed.
+5. The worker accepts sponsorship only when a posting itself contains explicit, non-negated visa-sponsorship language **and** clear evidence that international applicants (including those based in India) are considered. Employer licence-only matches are insufficient. Unknown sponsorship remains unverified.
+6. **Actual automatic submission** is implemented for employer-authorized Lever/Lever EU boards with a confirmed standard form. Supply secret `LEVER_APPLY_KEYS_JSON` to the UK South production GitHub environment in this shape (replace all placeholders; do not commit secrets):
+
+   ```json
+   {"lever:employer-board":{"key":"employer-issued-API-key","standard_form_confirmed":true}}
+   ```
+
+   Applications submit a real candidate email and the original PDF. Only `{ok:true, applicationId:"..."}` is recorded as employer-confirmed. Requests requiring employer-specific questions, unsupported ATS forms, missing credentials, uncertain outcomes or CAPTCHA interaction remain in review. The agent **does not invent answers or bypass site safeguards**.
+7. Every attempted application is idempotently reserved before the network request. Timeout outcomes become `unknown` and are never silently re-sent. The 24-hour confirmed limit is configurable (1–20). Approved or candidate-recorded submissions continue in the existing tracking workflow.
+
+The app does **not** have unrestricted application-submission privileges across LinkedIn, Indeed, Workday, Greenhouse, Ashby or other employer systems. It does not claim that an exported draft is a submitted application. Further connector permissions, applicant-supplied screening facts and employer-side submission access are needed for greater coverage.
 
 ## Install and run locally
 
@@ -71,9 +92,9 @@ The deployment design uses one low-volume scheduled worker and a database outbox
 
 ## Security and operations
 
-The Entra production configuration accepts v2 delegated access tokens for one tenant, the configured API audience, one owner object ID, and the access_as_user scope. Enforce MFA with your tenant’s policy and verify that login before accepting production traffic. Local bearer auth is intended for loopback use. The API rejects missing and mismatched credentials and sets a restrictive browser content policy. The dedicated App Service pilot can explicitly opt in to single-instance SQLite on persistent /home storage; full production should use PostgreSQL and private Blob storage. Review and enable ingress rate limiting with a suitable Azure edge control if deploying publicly.
+The Entra production configuration accepts v2 delegated access tokens for one tenant, the configured API audience, one owner object ID, and the access_as_user scope. Enforce MFA with your tenant’s policy and verify that login before accepting production traffic. Local bearer auth is intended for loopback use. The API rejects missing and mismatched credentials and sets a restrictive browser content policy. The UK South ACI pilot uses single-instance SQLite on private Azure Files storage; a higher-availability production release should move to managed PostgreSQL with tested backups and isolation. Review and enable ingress rate limiting with a suitable Azure edge control if deploying publicly.
 
-Job advertisements are untrusted. The model has no tools or write access and cannot change sponsorship, approval, or submission policy. Score excerpts must exist in the source text. Human reviewers confirm sponsorship. The original PDF is kept separate from extracted professional facts. Avoid collecting identity documents, passport numbers, or legal declarations. The release contains no live outbound ATS adapter. Sandbox submission tests require synthetic origins, an explicit policy, allowlisted employers and roles, resolved answers, an eligible vacancy, and a returned sandbox receipt.
+Job advertisements are untrusted. The OpenAI model scores and drafts content but has no direct network write authority or permission to change sponsorship, approval or submission policy. A separate deterministic policy-enforcing orchestrator can perform explicitly authorized provider submissions. Score excerpts must exist in the source text. Human reviewers confirm sponsorship. The original PDF is kept separate from extracted professional facts. Avoid collecting identity documents, passport numbers, or legal declarations. The production release has an opt-in Lever/Lever EU application adapter, gated by employer-issued credentials, verified candidate facts, explicit candidate authorization and a real external confirmation. Sandbox submission tests require synthetic origins, an explicit policy, allowlisted employers and roles, resolved answers, an eligible vacancy, and a returned sandbox receipt.
 
 ## Troubleshooting
 
@@ -84,7 +105,7 @@ Job advertisements are untrusted. The model has no tools or write access and can
 | High fit but ineligible | Review sponsor evidence, exclusions, vacancy activity and deadline. |
 | Approval rejected | Refresh and inspect the draft revision, expiry, profile, and sponsorship state. |
 | Missing notice | Check relay configuration and outbox attempts or dead state. |
-| Entra sign-in fails | Review redirect URI, token version, audience, delegated scope, owner object ID and tenant policy. |
-| Azure worker fails | Inspect Container Apps Job execution logs, Key Vault role propagation, DSN TLS and private DNS. |
+| Entra sign-in fails | Register the exact UK South HTTPS root URL as a SPA redirect URI on the **Job Hunter** Entra app registration, without modifying AegisSOC. Verify audience, scope and tenant. |
+| Azure worker fails | Inspect the isolated UK South Azure Container Instances app container logs, Key Vault role propagation, storage volume mounts and schedule settings. |
 
 See [AZURE.md](AZURE.md) for cost, resource plan, permissions, deployment and release gaps.
