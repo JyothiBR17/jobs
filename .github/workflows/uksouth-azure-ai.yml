@@ -56,44 +56,100 @@ jobs:
             echo "::error::Refusing to use any Azure AI resource outside Job Hunter's UK South OpenAI account"
             exit 1
           }
-      - name: Select a model actually available to this account
+      - name: Store the real Azure OpenAI account key in Job Hunter vault
+        run: |
+          set -euo pipefail
+          umask 077
+          vault_scope=$(az keyvault show -g "$RG" -n "$VAULT" --query id -o tsv)
+          principal=0a34ff40-76b9-4459-b5d2-6fde206db4ff
+          existing=$(az role assignment list --scope "$vault_scope" --assignee-object-id "$principal" --query "[?roleDefinitionName=='Key Vault Secrets Officer'].id | [0]" -o tsv)
+          if [[ -z "$existing" ]]; then
+            az role assignment create --scope "$vault_scope" --role 'Key Vault Secrets Officer' --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal -o none
+          fi
+          trap 'rm -f /tmp/jobhunter-model-key.txt' EXIT
+          az cognitiveservices account keys list -g "$RG" -n "$AI_ACCOUNT" --query key1 -o tsv > /tmp/jobhunter-model-key.txt
+          test -s /tmp/jobhunter-model-key.txt
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/jobhunter-model-key.txt')
+          p.write_text(p.read_text().strip())
+          PY
+          endpoint=$(az cognitiveservices account show -g "$RG" -n "$AI_ACCOUNT" --query properties.endpoint -o tsv)
+          [[ "$endpoint" == "https://$AI_ACCOUNT.openai.azure.com/" ]] || exit 1
+          for attempt in 1 2 3 4 5 6; do
+            if az keyvault secret set --vault-name "$VAULT" --name azure-openai-api-key --file /tmp/jobhunter-model-key.txt --encoding utf-8 --only-show-errors -o none; then
+              break
+            fi
+            [[ "$attempt" != 6 ]] || exit 1
+            sleep 10
+          done
+          az keyvault secret set --vault-name "$VAULT" --name azure-openai-endpoint --value "$endpoint" --only-show-errors -o none
+          echo 'Azure-issued API key and Azure OpenAI endpoint are now in the dedicated UK South vault.'
+          echo 'Model readiness remains unconfirmed until a supported deployment and inference succeed.'
+      - name: Discover UK South regional Standard model candidates
         run: |
           set -euo pipefail
           az cognitiveservices account list-models -g "$RG" -n "$AI_ACCOUNT" -o json > /tmp/jobhunter-models.json
           python - <<'PY'
-          import json, os
+          import json
           candidates = [('gpt-4.1-mini','2025-04-14'), ('gpt-4o-mini','2024-07-18'),
                         ('gpt-4o','2024-08-06')]
-          data = json.load(open('/tmp/jobhunter-models.json'))
-          if isinstance(data, dict):
-              data = data.get('value', [])
-          available = set()
-          for item in data:
-              model = item.get('model') or item
-              name, version = model.get('name'), model.get('version')
-              skus = item.get('skus') or []
+          data=json.load(open('/tmp/jobhunter-models.json'))
+          if isinstance(data,dict): data=data.get('value',[])
+          eligible=set()
+          for entry in data:
+              model=entry.get('model') or entry
+              name,version=model.get('name'),model.get('version')
+              skus=entry.get('skus') or []
               if name and version and (not skus or any(s.get('name') == 'Standard' for s in skus)):
-                  available.add((name, version))
-          choice = next((pair for pair in candidates if pair in available), None)
-          if choice is None:
-              raise SystemExit("No supported regional Standard chat model is available for this Job Hunter subscription in UK South; no other regions will be used")
-          with open(os.environ['GITHUB_ENV'],'a') as out:
-              out.write('MODEL_NAME='+choice[0]+'\nMODEL_VERSION='+choice[1]+'\n')
-          print('UK South regional model candidate:', choice[0], choice[1])
+                  eligible.add((name,version))
+          selected=[x for x in candidates if x in eligible]
+          with open('/tmp/jobhunter-candidates.txt','w') as output:
+              for name,version in selected:
+                  output.write(name+' '+version+'\n')
+          print('Supported UK South regional Standard model candidates:',
+                ', '.join(name for name,_ in selected) or 'none')
+          if not selected:
+              raise SystemExit('No supported UK South regional Standard chat models; other regions are forbidden')
           PY
-      - name: Deploy low-capacity regional chat model
+      - name: Try each eligible model against actual subscription quota
         run: |
           set -euo pipefail
-          if ! az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" -o none 2>/dev/null; then
-            az cognitiveservices account deployment create -g "$RG" -n "$AI_ACCOUNT" \
-              --deployment-name "$DEPLOYMENT" --model-name "$MODEL_NAME" --model-version "$MODEL_VERSION" \
-              --model-format OpenAI --sku-name Standard --sku-capacity 1 -o none
+          good=false
+          if az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" -o none 2>/dev/null; then
+            status=$(az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" --query properties.provisioningState -o tsv)
+            if [[ "$status" == Succeeded ]]; then
+              good=true
+              MODEL_NAME=$(az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" --query properties.model.name -o tsv)
+              MODEL_VERSION=$(az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" --query properties.model.version -o tsv)
+            fi
           fi
+          if [[ "$good" != true ]]; then
+            while read -r model version; do
+              [[ -n "$model" ]] || continue
+              echo "Checking available UK South Standard quota for: $model $version"
+              if az cognitiveservices account deployment create -g "$RG" -n "$AI_ACCOUNT" \
+                --deployment-name "$DEPLOYMENT" --model-name "$model" --model-version "$version" \
+                --model-format OpenAI --sku-name Standard --sku-capacity 1 -o none; then
+                good=true
+                MODEL_NAME="$model"
+                MODEL_VERSION="$version"
+                break
+              fi
+              echo "::warning::No deployable regional quota for $model $version; checking the next UK South candidate"
+            done < /tmp/jobhunter-candidates.txt
+          fi
+          if [[ "$good" != true ]]; then
+            echo "::error::No regional Standard token quota granted for the candidate models in UK South. Azure OpenAI account key is present in Job Hunter Key Vault, but no model can run until a quota increase is approved."
+            exit 1
+          fi
+          echo "MODEL_NAME=$MODEL_NAME" >> "$GITHUB_ENV"
+          echo "MODEL_VERSION=$MODEL_VERSION" >> "$GITHUB_ENV"
           az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" \
             --deployment-name "$DEPLOYMENT" \
             --query '{name:name,model:properties.model.name,version:properties.model.version,status:properties.provisioningState,sku:sku.name,capacity:sku.capacity}' -o json
           sku=$(az cognitiveservices account deployment show -g "$RG" -n "$AI_ACCOUNT" --deployment-name "$DEPLOYMENT" --query sku.name -o tsv)
-          [[ "$sku" == Standard ]] || { echo "::error::Only UK South regional Standard model deployments are allowed"; exit 1; }
+          [[ "$sku" == Standard ]] || { echo "::error::Only UK South regional Standard model deployments are permitted"; exit 1; }
       - name: Save real Azure-issued API credential to Job Hunter Key Vault
         run: |
           set -euo pipefail
