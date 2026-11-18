@@ -210,7 +210,13 @@ def run_cycle(limit=15):
         with database(write=True) as db:
             attempts = db.one("SELECT * FROM autopilot_attempt WHERE vacancy_id=?", (job["id"],))
             if attempts and attempts["state"] not in {"rate_limited"}:
-                continue
+                newly_authorized = (
+                    attempts["state"] == "needs_review"
+                    and attempts["detail"] == "Missing employer-issued Lever API authorization"
+                    and board_capabilities(job["source"]) is not None
+                )
+                if not newly_authorized:
+                    continue
             submitted = db.one(
                 "SELECT COUNT(*) AS n FROM submission WHERE channel='lever_api' AND recorded_at>=?", (start,)
             )["n"]
