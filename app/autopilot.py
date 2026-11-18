@@ -17,7 +17,7 @@ from .db import audit, checkpoint, database, now
 from .discovery import boards
 from .files import load_resume
 from .notifications import enqueue
-from .secrets import get_openai_key
+from .secrets import get_ai_backend
 
 
 class AutoPolicy(Strict):
@@ -274,8 +274,9 @@ def status():
         "ready": has_resume and verified and check_email(policy.email) and policy.consent,
         "original_resume_uploaded": has_resume,
         "profile_verified": verified,
-        "openai_enabled": bool(get_openai_key()),
-        "model": os.environ.get("OPENAI_MODEL", "gpt-5-mini") if get_openai_key() else None,
+        "openai_enabled": bool(get_ai_backend()),
+        "model": (get_ai_backend().get("deployment") if get_ai_backend().get("provider") == "azure_openai" else os.environ.get("OPENAI_MODEL", "gpt-5-mini")) if get_ai_backend() else None,
+        "ai_provider": get_ai_backend().get("provider") if get_ai_backend() else None,
         "provider_api_ready": [source for source in policy.sources if board_capabilities(source)],
         "suggested_sources": [
             f"{item['provider']}:{item['slug']}" for item in boards(os.getenv("JOB_BOARDS_JSON"))
